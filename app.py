@@ -75,6 +75,18 @@ with st.sidebar:
 
     run_btn = st.button("🚀 開始掃描")
 
+with st.sidebar:
+    st.divider()
+    st.markdown("### 🐝 蜂巢通訊紀錄") # 改個帥氣的名字
+    try:
+        with open("login_log.txt", "r", encoding="utf-8") as f:
+            logs = f.readlines()
+            for log in logs[-5:]: # 只顯示最近 5 次
+                # 讓紀錄變成淡淡的小字，比較不佔空間
+                st.write(f"🕒 `{log.strip()}`")
+    except:
+        st.caption("📡 訊號掃描中... 暫無登入紀錄")
+    
 # --- 這裡加入「訪客紀錄」顯示 ---
     st.divider()
     st.subheader("👤 最近訪客紀錄")
