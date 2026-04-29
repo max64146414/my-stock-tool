@@ -5,21 +5,21 @@ from FinMind.data import DataLoader
 import plotly.graph_objects as go
 import time
 
-# --- 0. 簡易密碼鎖 (美化版) ---
+import streamlit as st
+# ... 其他 import ...
+
+# --- 0. 簡易密碼鎖函數定義 ---
 def check_password():
-    """如果輸入正確密碼則回傳 True"""
     if "password_correct" not in st.session_state:
-        # --- 新增的標題與裝飾 ---
         st.markdown("<h1 style='text-align: center;'>🐝 🐝 🐝 🐝 🐝</h1>", unsafe_allow_html=True)
         st.markdown("<h1 style='text-align: center;'>阿峰的回測追蹤</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center;'>專屬雷達系統，請輸入通關密語</p>", unsafe_allow_html=True)
         
-        # 為了美觀，將輸入框放在中間
         _, col_mid, _ = st.columns([1, 2, 1])
         with col_mid:
             password = st.text_input("密碼", type="password")
             if st.button("確認登入"):
-                if password == "19930522": # 這裡記得填入你的密碼
+                if password == "19930522": 
                     st.session_state["password_correct"] = True
                     st.rerun()
                 else:
@@ -28,6 +28,10 @@ def check_password():
         st.markdown("<h3 style='text-align: center;'>🐝 🐝 🐝 🐝 🐝</h3>", unsafe_allow_html=True)
         return False
     return True
+
+# --- 這裡最重要：先檢查密碼，沒過就攔截！ ---
+if not check_password():
+    st.stop()  # 這一行是保門員，密碼沒過，下面的代碼通通不執行
 
 # --- 1. 配置 ---
 st.set_page_config(page_title="台股量價全視角雷達", layout="wide")
