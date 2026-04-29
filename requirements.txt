@@ -4,3 +4,4 @@ yfinance
 FinMind
 plotly
 tqdm
+requests
