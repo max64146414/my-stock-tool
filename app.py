@@ -173,7 +173,7 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         print(f"分析 {symbol} 時出錯: {e}")
         return None
         
-# --- 5. 執行顯示 ---
+# --- 5. 執行顯示 (手機看盤優化版) ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
     st.info(f"🔎 模式：{mode} | 正在掃描 {len(full_list)} 檔標的...")
@@ -189,9 +189,10 @@ if run_btn:
     
     if hits:
         st.divider()
-        cols = st.columns(3)
-        for idx, hit in enumerate(hits):
-            with cols[idx % 3]:
+        # --- 修改點 1：拿掉 cols = st.columns(3)，手機版建議一列一檔 ---
+        for hit in hits:
+            # 使用 container 包裹每一檔，增加卡片感
+            with st.container():
                 clean_id = hit['id'].replace(".TW", "")
                 
                 # 本益比標記
@@ -199,35 +200,56 @@ if run_btn:
                 pe_str = f"{pe_val:.1f}" if pe_val else "N/A"
                 pe_display = f":green[{pe_str}]" if pe_val and pe_val < 15 else (f":red[{pe_str}]" if pe_val and pe_val > 30 else pe_str)
 
-                st.markdown(f"### {hit['id']} {hit['status']}")
-                st.write(f"現價: **{hit['price']:.1f}** | **本益比: {pe_display}**")
+                # --- 修改點 2：大標題加上 TradingView 跳轉連結 ---
+                tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
+                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
-                v_color = ":red" if hit['vol_diff'] > 50 else (":green" if hit['vol_diff'] < -30 else "")
-                st.write(f"🔄 量能變動: {v_color}[{hit['vol_diff']:.1f}%]")
+                # --- 修改點 3：使用 columns 橫向排列手機最關心的數據 ---
+                c1, c2, c3 = st.columns(3)
+                c1.metric("現價", f"{hit['price']:.1f}")
                 
+                v_color = "normal" if hit['vol_diff'] < 50 else "inverse"
+                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.0f}%", delta_color=v_color)
+                
+                c3.write(f"PE: {pe_display}")
+                
+                # 顯示距離指標
                 if mode == "均線糾纏 (底部突破)":
                     st.write(f"📏 糾纏寬度: **{hit['spread']:.2f}%**")
                 else:
-                    st.write(f"📏 距10MA: {hit['d10']:.2f}% | 距20MA: {hit['d20']:.2f}%")
+                    # 如果距離很近(例如 < 1%)，用加粗體提醒
+                    d20_text = f"**{hit['d20']:.2f}%**" if abs(hit['d20']) < 1 else f"{hit['d20']:.2f}%"
+                    st.write(f"📏 距10MA: {hit['d10']:.2f}% | 距20MA: {d20_text}")
 
-                fig = go.Figure(data=[go.Candlestick(x=hit['df'].index, open=hit['df']['Open'], high=hit['df']['High'], low=hit['df']['Low'], close=hit['df']['Close'], name="K")])
-                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(10).mean(), name="10", line=dict(color='orange', width=1)))
-                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(20).mean(), name="20", line=dict(color='red', width=1)))
-                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(60).mean(), name="60", line=dict(color='green', width=2)))
-                fig.update_layout(xaxis_rangeslider_visible=False, height=230, margin=dict(l=5, r=5, t=5, b=5), showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
+                # --- 修改點 4：優化 Plotly 圖表，高度調高一點讓手機更好看 K 線 ---
+                fig = go.Figure(data=[go.Candlestick(
+                    x=hit['df'].index, open=hit['df']['Open'], 
+                    high=hit['df']['High'], low=hit['df']['Low'], 
+                    close=hit['df']['Close'], name="K")])
                 
-                # --- 這裡按鈕區 (穩健修正版) ---
-                c1, c2 = st.columns(2)
-                c1.link_button("籌碼", f"https://www.wantgoo.com/stock/{clean_id}/chips")
-                c2.link_button("法人", f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-trading")
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(10).mean(), name="10", line=dict(color='orange', width=1.5)))
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(20).mean(), name="20", line=dict(color='red', width=1.5)))
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(60).mean(), name="60", line=dict(color='green', width=2.5)))
                 
-                # 改用摺疊面板，點開就一定會看到，不會沒反應
-                with st.expander(f"📋 點我生成 Gemini 復盤資料"):
+                fig.update_layout(
+                    xaxis_rangeslider_visible=False, 
+                    height=300, # 手機版 300 比較好操作 K 線
+                    margin=dict(l=10, r=10, t=10, b=10), 
+                    showlegend=False,
+                    template="plotly_dark" # 深色模式比較帥
+                )
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                
+                # --- 修改點 5：按鈕加大，方便手指點擊 ---
+                b1, b2, b3 = st.columns(3)
+                b1.link_button("📈 圖表", tv_url, use_container_width=True)
+                b2.link_button("💰 籌碼", f"https://www.wantgoo.com/stock/{clean_id}/chips", use_container_width=True)
+                b3.link_button("🏢 法人", f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-trading", use_container_width=True)
+                
+                with st.expander(f"📋 生成 Gemini 復盤資料"):
                     draft_content = f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n狀態: {hit['status']}\n數據: 現價{hit['price']}, 距20MA {hit['d20']:.2f}%, 量比 {hit['vol_diff']:.1f}%, PE {pe_str}"
                     st.code(draft_content)
-                    st.caption("☝️ 點擊上方小方塊右上角的按鈕即可複製")
                 
-                st.divider()
+                st.divider() # 卡片間的分隔線
     else:
         st.warning("查無符合標的。")
