@@ -58,13 +58,18 @@ with st.sidebar:
     run_btn = st.button("🚀 開始掃描")
 
 # --- 3. 清單抓取 (全產業強化版) ---
-@st.cache_data(ttl=600)  # 設定 10 分鐘更新一次
+@st.cache_data(ttl=600)
 def get_full_industry_list(category):
-    # 這是最後的防線，如果真的抓不到，至少大聯盟不能死
-    league_backup = ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "3131.TW", "3583.TW", "6187.TW", "2467.TW", "3680.TW", "6196.TW", "3443.TW", "3661.TW", "4770.TW", "3010.TW", "8028.TW", "3376.TW", "1773.TW", "1560.TW"]
-    
-    if category == "★台積電大聯盟 (設備/耗材/IP)":
-        return league_backup
+    # 建立一個「永不失效」的清單庫
+    static_lists = {
+        "半導體": ["2330.TW", "2303.TW", "2454.TW", "2337.TW", "2344.TW", "3711.TW", "3034.TW", "2408.TW", "6770.TW", "3532.TW", "2449.TW", "2329.TW", "8081.TW", "6239.TW", "3264.TW", "3374.TW", "3583.TW", "6187.TW"],
+        "電腦及週邊設備業": ["2382.TW", "2357.TW", "3231.TW", "2376.TW", "2353.TW", "2324.TW", "2395.TW", "3017.TW", "6235.TW", "6117.TW"],
+        "★台積電大聯盟 (設備/耗材/IP)": ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "3131.TW", "3583.TW", "6187.TW", "2467.TW", "3680.TW", "6196.TW", "3443.TW", "3661.TW", "4770.TW", "3010.TW", "8028.TW", "3376.TW", "1773.TW", "1560.TW"]
+    }
+
+    # 如果選的是這幾個，直接給清單，連問都不用問 FinMind，速度快 10 倍！
+    if category in static_lists:
+        return static_lists[category]
 
     # 嘗試抓取全產業資料
     for attempt in range(3):  # 給它 3 次機會重試
