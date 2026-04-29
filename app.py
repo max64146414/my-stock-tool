@@ -58,7 +58,7 @@ with st.sidebar:
     run_btn = st.button("🚀 開始掃描")
 
 # --- 3. 清單抓取 ---
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=300)
 def get_full_industry_list(category):
     if category == "★台積電大聯盟 (設備/耗材/IP)":
         return ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "3131.TW", "3583.TW", "6187.TW", "2467.TW", "3680.TW", "6196.TW", "3443.TW", "3661.TW", "4770.TW", "3010.TW", "8028.TW", "3376.TW", "1773.TW", "1560.TW"]
@@ -74,7 +74,7 @@ def get_full_industry_list(category):
 def analyze_stock(symbol, mode_choice, param1, param2=None):
     try:
         # 改用 yf.download 並關閉多執行緒，這在雲端最穩定
-        df = yf.download(symbol, period="150d", progress=False, threads=False)
+        df = yf.download(symbol, period="200d", progress=False, threads=False)
         
         if df.empty or len(df) < 65:
             return None
