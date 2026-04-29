@@ -65,13 +65,23 @@ def get_full_industry_list(category):
 # --- 4. 核心分析函數 ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
     try:
-        ticker = yf.Ticker(symbol)
-        df = ticker.history(period="100d")
-        if df is None or len(df) < 65: return None
+        # 改用 yf.download 並關閉多執行緒，這在雲端最穩定
+        df = yf.download(symbol, period="150d", progress=False, threads=False)
+        
+        if df.empty or len(df) < 65:
+            return None
 
-        pe_ratio = ticker.info.get('trailingPE', None)
+        # 處理雲端抓取時可能出現的多層索引問題
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
         close = df['Close'].astype(float)
         volume = df['Volume'].astype(float)
+        
+        # 確保數據是 Series 格式
+        close = close.squeeze()
+        volume = volume.squeeze()
+
         ma10, ma20, ma60 = close.rolling(10).mean(), close.rolling(20).mean(), close.rolling(60).mean()
         
         today_vol = volume.iloc[-1]
@@ -80,6 +90,13 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         curr_p = float(close.iloc[-1])
         m10, m20, m60_curr = float(ma10.iloc[-1]), float(ma20.iloc[-1]), float(ma60.iloc[-1])
         m60_prev = float(ma60.iloc[-2])
+
+        # 這裡獲取本益比（雲端有時會抓不到，給予預設值）
+        try:
+            ticker = yf.Ticker(symbol)
+            pe_ratio = ticker.info.get('trailingPE', None)
+        except:
+            pe_ratio = None
 
         if mode_choice == "均線回檔 (趨勢追蹤)":
             if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200:
@@ -90,17 +107,16 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         elif mode_choice == "均線糾纏 (底部突破)":
             ma_list = [m10, m20, m60_curr]
             spread = (max(ma_list) - min(ma_list)) / min(ma_list)
-            is_entangled = spread < param1
-            is_trending_up = m60_curr >= m60_prev * 0.998
-            is_above = curr_p > max(ma_list)
-            is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
-
-            if is_entangled and is_trending_up and is_above:
+            if spread < param1 and m60_curr >= m60_prev * 0.998 and curr_p > max(ma_list):
+                is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
                 status_text = "🚀 帶量突破" if is_vol_boost else "💤 糾纏待變"
                 return {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "pe": pe_ratio, "d10": ((curr_p-m10)/m10)*100, "d20": ((curr_p-m20)/m20)*100, "df": df.tail(40), "status": status_text, "spread": spread*100}
         return None
-    except: return None
-
+    except Exception as e:
+        # 這裡可以在雲端 Log 看到錯誤原因
+        print(f"分析 {symbol} 時出錯: {e}")
+        return None
+        
 # --- 5. 執行顯示 ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
