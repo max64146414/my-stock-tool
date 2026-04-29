@@ -204,14 +204,16 @@ if run_btn:
                 tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
                 st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
-                # --- 修改點 3：使用 columns 橫向排列手機最關心的數據 ---
-                c1, c2, c3 = st.columns(3)
+                # --- 修改點 3：手機版數據優化 ---
+                # 我們只用兩欄 (c1, c2)，把空間留給最重要的現價與量能
+                c1, c2 = st.columns(2)
                 c1.metric("現價", f"{hit['price']:.1f}")
                 
                 v_color = "normal" if hit['vol_diff'] < 50 else "inverse"
                 c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.0f}%", delta_color=v_color)
                 
-                c3.write(f"PE: {pe_display}")
+                # PE 不放欄位了，直接寫在下面，手機絕對看得到
+                st.write(f"📈 **本益比 (PE):** {pe_display}")
                 
                 # 顯示距離指標
                 if mode == "均線糾纏 (底部突破)":
