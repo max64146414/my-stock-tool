@@ -174,6 +174,19 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
                 is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
                 status_text = "🚀 帶量突破" if is_vol_boost else "💤 糾纏待變"
                 return {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "pe": pe_ratio, "d10": ((curr_p-m10)/m10)*100, "d20": ((curr_p-m20)/m20)*100, "df": df.tail(40), "status": status_text, "spread": spread*100}
+        # --- 關鍵優化：只有符合模式的股票才去抓 PE ---
+        if hit_data:
+            try:
+                t_obj = yf.Ticker(symbol)
+                # fast_info 雖然快，但 trailing_pe 比較準，我們先試 trailing_pe
+                pe_ratio = t_obj.info.get('trailingPE')
+            except:
+                pe_ratio = None
+            
+            # 將 PE 塞回結果中
+            hit_data['pe'] = pe_ratio
+            return hit_data
+
         return None
     except Exception as e:
         print(f"分析 {symbol} 時出錯: {e}")
