@@ -57,42 +57,28 @@ with st.sidebar:
 
     run_btn = st.button("🚀 開始掃描")
 
-# --- 3. 清單抓取 (全產業強化版) ---
-@st.cache_data(ttl=600)
+# --- 3. 清單抓取 ---
+@st.cache_data(ttl=600) # 雲端建議縮短快取，失敗時好重整
 def get_full_industry_list(category):
-    # 建立一個「永不失效」的清單庫
-    static_lists = {
-        "半導體": ["2330.TW", "2303.TW", "2454.TW", "2337.TW", "2344.TW", "3711.TW", "3034.TW", "2408.TW", "6770.TW", "3532.TW", "2449.TW", "2329.TW", "8081.TW", "6239.TW", "3264.TW", "3374.TW", "3583.TW", "6187.TW"],
-        "電腦及週邊設備業": ["2382.TW", "2357.TW", "3231.TW", "2376.TW", "2353.TW", "2324.TW", "2395.TW", "3017.TW", "6235.TW", "6117.TW"],
-        "★台積電大聯盟 (設備/耗材/IP)": ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "3131.TW", "3583.TW", "6187.TW", "2467.TW", "3680.TW", "6196.TW", "3443.TW", "3661.TW", "4770.TW", "3010.TW", "8028.TW", "3376.TW", "1773.TW", "1560.TW"]
-    }
-
-    # 如果選的是這幾個，直接給清單，連問都不用問 FinMind，速度快 10 倍！
-    if category in static_lists:
-        return static_lists[category]
-
-    # 嘗試抓取全產業資料
-    for attempt in range(3):  # 給它 3 次機會重試
+    # 台積電大聯盟是你的最愛，直接寫死確保 100% 成功
+    if category == "★台積電大聯盟 (設備/耗材/IP)":
+        return ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "3131.TW", "3583.TW", "6187.TW", "2467.TW", "3680.TW", "6196.TW", "3443.TW", "3661.TW", "4770.TW", "3010.TW", "8028.TW", "3376.TW", "1773.TW", "1560.TW"]
+    
+    # 給雲端 3 次機會，不要一次失敗就投降
+    for _ in range(3):
         try:
             dl = DataLoader()
             df = dl.taiwan_stock_info()
-            
             if df is not None and not df.empty:
-                # 過濾出該產業的股票
                 stocks = df[df['industry_category'].str.contains(category.replace("業", ""))]
-                # 篩選 4 位數的標準個股 (排除權證、存託憑證)
                 stock_ids = stocks[stocks['stock_id'].str.len() == 4]['stock_id'].tolist()
                 res = [f"{s}.TW" for s in stock_ids]
-                
-                if len(res) > 0:
-                    return res
+                if len(res) > 0: return res
+        except:
+            import time
+            time.sleep(1) # 失敗了等一秒再試
             
-            time.sleep(1) # 如果失敗，等一秒再試
-        except Exception as e:
-            print(f"第 {attempt+1} 次抓取清單失敗: {e}")
-            time.sleep(1)
-            
-    # 如果 3 次都失敗了，回傳基本權值股，不讓頁面全空
+    # 如果真的 3 次都抓不到，至少給 8 檔權值股，比 2 檔好
     return ["2330.TW", "2317.TW", "2454.TW", "2303.TW", "3231.TW", "2382.TW", "2881.TW", "2882.TW"]
     
 # --- 4. 核心分析函數 ---
