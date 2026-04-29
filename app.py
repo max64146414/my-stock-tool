@@ -21,6 +21,24 @@ def check_password():
             if st.button("確認登入"):
                 if password == "19930522": 
                     st.session_state["password_correct"] = True
+                    
+                    # --- 新增：訪客紀錄邏輯 ---
+                    import datetime
+                    # 取得現在時間 (台北時間)
+                    now = datetime.datetime.now() + datetime.timedelta(hours=8)
+                    time_str = now.strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    # 這裡可以寫死是「阿峰」，或者未來你有給別人密碼，可以根據密碼判斷是誰
+                    user_name = "阿峰" 
+                    
+                    # 建立一條紀錄
+                    log_entry = f"{time_str} - {user_name} 登入系統\n"
+                    
+                    # 將紀錄寫入一個叫 login_log.txt 的檔案 (append 模式)
+                    with open("login_log.txt", "a", encoding="utf-8") as f:
+                        f.write(log_entry)
+                    # ------------------------
+                    
                     st.rerun()
                 else:
                     st.error("🚫 密碼錯誤，請再試一次")
@@ -56,6 +74,19 @@ with st.sidebar:
         vol_boost = st.slider("帶量突破門檻 (倍)", 1.0, 5.0, 1.8)
 
     run_btn = st.button("🚀 開始掃描")
+
+# --- 這裡加入「訪客紀錄」顯示 ---
+    st.divider()
+    st.subheader("👤 最近訪客紀錄")
+    try:
+        # 讀取 login_log.txt
+        with open("login_log.txt", "r", encoding="utf-8") as f:
+            logs = f.readlines()
+            # 用 reversed 讓最新時間在最上面
+            for log in reversed(logs[-5:]): 
+                st.caption(f"🕒 {log.strip()}")
+    except:
+        st.caption("📡 尚無連線紀錄")
 
 import json # 確保你的 app.py 最上方有這行
 
