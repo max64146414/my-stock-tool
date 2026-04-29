@@ -172,3 +172,81 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
     except Exception as e:
         print(f"分析 {symbol} 時出錯: {e}")
         return None
+
+# --- 5. 執行顯示 (手機看盤優化版) ---
+if run_btn:
+    # 這裡會讀取你的 stock_list.json
+    full_list = get_full_industry_list(industry_choice)
+    st.info(f"🔎 模式：{mode} | 正在掃描 {len(full_list)} 檔標的...")
+    
+    hits = []
+    bar = st.progress(0)
+    
+    # 開始迴圈掃描
+    for i, s in enumerate(full_list):
+        p1 = sensitivity if mode == "均線回檔 (趨勢追蹤)" else entangle_limit
+        p2 = vol_boost if mode == "均線糾纏 (底部突破)" else None
+        res = analyze_stock(s, mode, p1, p2)
+        if res: 
+            hits.append(res)
+        bar.progress((i + 1) / len(full_list))
+    
+    if hits:
+        st.divider()
+        for hit in hits:
+            with st.container():
+                # --- [A] 變數預處理 (必須先定義 tv_url 才能顯示標題) ---
+                clean_id = hit['id'].replace(".TW", "")
+                tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
+                
+                pe_val = hit['pe']
+                if pe_val:
+                    pe_str = f"{pe_val:.1f}"
+                    pe_display = f":green[{pe_str}]" if pe_val < 15 else (f":red[{pe_str}]" if pe_val > 30 else pe_str)
+                else:
+                    pe_display = "暫無數據(或虧損)"
+
+                # --- [B] 顯示 UI ---
+                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
+                
+                c1, c2 = st.columns(2)
+                c1.metric("現價", f"{hit['price']:.1f}")
+                v_color = "normal" if hit['vol_diff'] < 50 else "inverse"
+                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.1f}%", delta_color=v_color)
+                
+                st.write(f"📈 **本益比 (PE):** {pe_display}")
+                
+                if mode == "均線糾纏 (底部突破)":
+                    st.write(f"📏 糾纏寬度: **{hit['spread']:.2f}%**")
+                else:
+                    d20_text = f"**{hit['d20']:.2f}%**" if abs(hit['d20']) < 1 else f"{hit['d20']:.2f}%"
+                    st.write(f"📏 距10MA: {hit['d10']:.2f}% | 距20MA: {d20_text}")
+
+                # --- [C] 畫圖 ---
+                fig = go.Figure(data=[go.Candlestick(
+                    x=hit['df'].index, open=hit['df']['Open'], 
+                    high=hit['df']['High'], low=hit['df']['Low'], 
+                    close=hit['df']['Close'], name="K")])
+                
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(10).mean(), name="10", line=dict(color='orange', width=1.5)))
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(20).mean(), name="20", line=dict(color='red', width=1.5)))
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(60).mean(), name="60", line=dict(color='green', width=2.5)))
+                
+                fig.update_layout(
+                    xaxis_rangeslider_visible=False, height=300, 
+                    margin=dict(l=10, r=10, t=10, b=10), showlegend=False, template="plotly_dark"
+                )
+                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+                
+                # --- [D] 按鈕 ---
+                b1, b2, b3 = st.columns(3)
+                b1.link_button("📈 圖表", tv_url, use_container_width=True)
+                b2.link_button("💰 籌碼", f"https://www.wantgoo.com/stock/{clean_id}/chips", use_container_width=True)
+                b3.link_button("🏢 法人", f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-trading", use_container_width=True)
+                
+                with st.expander(f"📋 生成 Gemini 復盤資料"):
+                    st.code(f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n數據: 現價{hit['price']}, 距20MA {hit['d20']:.2f}%, PE {pe_display}")
+                
+                st.divider()
+    else:
+        st.warning("查無符合標的，請調整設定後再試。")
