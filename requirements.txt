@@ -3,3 +3,4 @@ pandas
 yfinance
 FinMind
 plotly
+tqdm
