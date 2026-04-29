@@ -73,22 +73,28 @@ def get_full_industry_list(category):
 # --- 4. 核心分析函數 ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
     try:
-        # 改用 yf.download 並關閉多執行緒，這在雲端最穩定
+        # 改用 yf.download 並增加 period 確保均線計算有足夠歷史資料
         df = yf.download(symbol, period="200d", progress=False, threads=False)
         
         if df.empty or len(df) < 65:
             return None
 
-        # 處理雲端抓取時可能出現的多層索引問題
+        # 處理雲端抓取時可能出現的多層索引問題 (這對大聯盟清單非常重要)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
+        
+        # 強制將所有欄位名稱轉為首字母大寫，預防大小寫不一導致查無資料
+        df.columns = [str(c).capitalize() for c in df.columns]
 
         close = df['Close'].astype(float)
         volume = df['Volume'].astype(float)
         
-        # 確保數據是 Series 格式
-        close = close.squeeze()
-        volume = volume.squeeze()
+        # 確保數據是 Series 格式並移除空值
+        close = close.squeeze().dropna()
+        volume = volume.squeeze().dropna()
+
+        if len(close) < 65:
+            return None
 
         ma10, ma20, ma60 = close.rolling(10).mean(), close.rolling(20).mean(), close.rolling(60).mean()
         
@@ -107,21 +113,23 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
             pe_ratio = None
 
         if mode_choice == "均線回檔 (趨勢追蹤)":
+            # 判斷條件：站上季線且季線向上，且 5 日均量 > 200 張
             if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200:
                 dist_10, dist_20 = ((curr_p - m10) / m10), ((curr_p - m20) / m20)
+                # 判斷是否回測 10MA 或 20MA (param1 是你滑桿拉的 % 數)
                 if abs(dist_10) < param1 or abs(dist_20) < param1:
                     return {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "pe": pe_ratio, "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(40), "status": "🛡️ 回檔支撐"}
 
         elif mode_choice == "均線糾纏 (底部突破)":
             ma_list = [m10, m20, m60_curr]
             spread = (max(ma_list) - min(ma_list)) / min(ma_list)
+            # 判斷條件：均線糾纏小於 param1，且現價突破所有均線
             if spread < param1 and m60_curr >= m60_prev * 0.998 and curr_p > max(ma_list):
                 is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
                 status_text = "🚀 帶量突破" if is_vol_boost else "💤 糾纏待變"
                 return {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "pe": pe_ratio, "d10": ((curr_p-m10)/m10)*100, "d20": ((curr_p-m20)/m20)*100, "df": df.tail(40), "status": status_text, "spread": spread*100}
         return None
     except Exception as e:
-        # 這裡可以在雲端 Log 看到錯誤原因
         print(f"分析 {symbol} 時出錯: {e}")
         return None
         
