@@ -186,59 +186,51 @@ if run_btn:
         res = analyze_stock(s, mode, p1, p2)
         if res: hits.append(res)
         bar.progress((i + 1) / len(full_list))
-    
     if hits:
         st.divider()
-        # --- 修改點 1：拿掉 cols = st.columns(3)，手機版建議一列一檔 ---
+        # --- 每一列一檔，手機看盤最順 ---
         for hit in hits:
-            # 使用 container 包裹每一檔，增加卡片感
             with st.container():
+                # --- [A] 變數預處理 (一定要先寫這個，否則下面會報錯) ---
                 clean_id = hit['id'].replace(".TW", "")
+                tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
                 
-                # --- 強化版的本益比標記 ---
+                # 本益比邏輯
                 pe_val = hit['pe']
                 if pe_val:
                     pe_str = f"{pe_val:.1f}"
-                    # 顏色邏輯不變
                     pe_display = f":green[{pe_str}]" if pe_val < 15 else (f":red[{pe_str}]" if pe_val > 30 else pe_str)
                 else:
-                    # 如果是 N/A，我們可以顯示得更有意義一點
-                    pe_display = "暫無數據(或虧損)" # <--- 這樣你就不會覺得是程式壞掉
-                
-                # --- 顯示區 ---
-                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
-                
-                c1, c2 = st.columns(2)
-                c1.metric("現價", f"{hit['price']:.1f}")
-                
-                v_color = "normal" if hit['vol_diff'] < 50 else "inverse"
-                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.0f}%", delta_color=v_color)
-                
-                # 這樣顯示，手機電腦都一定能看到這行字
-                st.write(f"📈 **本益比 (PE):** {pe_display}")
+                    pe_display = "暫無數據(或虧損)"
 
-                # --- 修改點 2：大標題加上 TradingView 跳轉連結 ---
-                tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
+                # --- [B] 開始顯示 UI ---
+                # 1. 標題 (含連結)
                 st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
-                # --- 修改點 3：手機版數據優化 ---
-                # 我們只用兩欄 (c1, c2)，把空間留給最重要的現價與量能
+                # 2. 核心數據 (現價與量能)
                 c1, c2 = st.columns(2)
                 c1.metric("現價", f"{hit['price']:.1f}")
                 
+                # 量能變動顏色提醒
                 v_color = "normal" if hit['vol_diff'] < 50 else "inverse"
-                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.0f}%", delta_color=v_color)
+                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.1f}%", delta_color=v_color)
                 
-                # PE 不放欄位了，直接寫在下面，手機絕對看得到
+                # 3. PE 與 均線距離 (確保手機看得到)
                 st.write(f"📈 **本益比 (PE):** {pe_display}")
                 
-                # 顯示距離指標
                 if mode == "均線糾纏 (底部突破)":
                     st.write(f"📏 糾纏寬度: **{hit['spread']:.2f}%**")
                 else:
-                    # 如果距離很近(例如 < 1%)，用加粗體提醒
                     d20_text = f"**{hit['d20']:.2f}%**" if abs(hit['d20']) < 1 else f"{hit['d20']:.2f}%"
                     st.write(f"📏 距10MA: {hit['d10']:.2f}% | 距20MA: {d20_text}")
+
+                # --- [C] 接下來接你原本的 Plotly 圖表代碼 ---
+                # fig = go.Figure(...) 
+                # st.plotly_chart(fig, ...)
+                
+                st.divider() # 卡片間的分隔線
+    else:
+        st.warning("查無符合標的。")
 
                 # --- 修改點 4：優化 Plotly 圖表，高度調高一點讓手機更好看 K 線 ---
                 fig = go.Figure(data=[go.Candlestick(
