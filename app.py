@@ -145,10 +145,16 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         m10, m20, m60_curr = float(ma10.iloc[-1]), float(ma20.iloc[-1]), float(ma60.iloc[-1])
         m60_prev = float(ma60.iloc[-2])
 
-        # 這裡獲取本益比（雲端有時會抓不到，給予預設值）
+      # --- 強化版 PE 抓取邏輯 ---
+        pe_ratio = None
         try:
-            ticker = yf.Ticker(symbol)
-            pe_ratio = ticker.info.get('trailingPE', None)
+            # 這裡我們換成 ticker.fast_info，速度快且不容易被擋
+            t_obj = yf.Ticker(symbol)
+            # 優先抓 trailingPE，如果沒有就抓 None
+            pe_ratio = t_obj.info.get('trailingPE')
+            
+            # 如果真的抓不到，乾脆不要在掃描時硬抓，
+            # 讓程式順暢跑完比顯示 PE 更重要
         except:
             pe_ratio = None
 
