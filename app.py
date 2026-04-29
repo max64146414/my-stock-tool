@@ -19,7 +19,7 @@ def check_password():
         with col_mid:
             password = st.text_input("密碼", type="password")
             if st.button("確認登入"):
-                if password == "你的專屬密碼": # 這裡記得填入你的密碼
+                if password == "19930522": # 這裡記得填入你的密碼
                     st.session_state["password_correct"] = True
                     st.rerun()
                 else:
