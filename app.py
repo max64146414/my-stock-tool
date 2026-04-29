@@ -195,10 +195,27 @@ if run_btn:
             with st.container():
                 clean_id = hit['id'].replace(".TW", "")
                 
-                # 本益比標記
+                # --- 強化版的本益比標記 ---
                 pe_val = hit['pe']
-                pe_str = f"{pe_val:.1f}" if pe_val else "N/A"
-                pe_display = f":green[{pe_str}]" if pe_val and pe_val < 15 else (f":red[{pe_str}]" if pe_val and pe_val > 30 else pe_str)
+                if pe_val:
+                    pe_str = f"{pe_val:.1f}"
+                    # 顏色邏輯不變
+                    pe_display = f":green[{pe_str}]" if pe_val < 15 else (f":red[{pe_str}]" if pe_val > 30 else pe_str)
+                else:
+                    # 如果是 N/A，我們可以顯示得更有意義一點
+                    pe_display = "暫無數據(或虧損)" # <--- 這樣你就不會覺得是程式壞掉
+                
+                # --- 顯示區 ---
+                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
+                
+                c1, c2 = st.columns(2)
+                c1.metric("現價", f"{hit['price']:.1f}")
+                
+                v_color = "normal" if hit['vol_diff'] < 50 else "inverse"
+                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%", delta=f"{hit['vol_diff']:.0f}%", delta_color=v_color)
+                
+                # 這樣顯示，手機電腦都一定能看到這行字
+                st.write(f"📈 **本益比 (PE):** {pe_display}")
 
                 # --- 修改點 2：大標題加上 TradingView 跳轉連結 ---
                 tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
