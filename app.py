@@ -77,7 +77,7 @@ with st.sidebar:
 
 with st.sidebar:
     st.divider()
-    st.markdown("### 🐝 蜂巢通訊紀錄") # 改個帥氣的名字
+    st.markdown("### 🐝 蜂巢足跡") # 改個帥氣的名字
     try:
         with open("login_log.txt", "r", encoding="utf-8") as f:
             logs = f.readlines()
@@ -86,19 +86,6 @@ with st.sidebar:
                 st.write(f"🕒 `{log.strip()}`")
     except:
         st.caption("📡 訊號掃描中... 暫無登入紀錄")
-    
-# --- 這裡加入「訪客紀錄」顯示 ---
-    st.divider()
-    st.subheader("👤 最近訪客紀錄")
-    try:
-        # 讀取 login_log.txt
-        with open("login_log.txt", "r", encoding="utf-8") as f:
-            logs = f.readlines()
-            # 用 reversed 讓最新時間在最上面
-            for log in reversed(logs[-5:]): 
-                st.caption(f"🕒 {log.strip()}")
-    except:
-        st.caption("📡 尚無連線紀錄")
 
 import json # 確保你的 app.py 最上方有這行
 
