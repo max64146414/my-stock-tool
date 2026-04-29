@@ -5,25 +5,29 @@ from FinMind.data import DataLoader
 import plotly.graph_objects as go
 import time
 
-# --- 0. 簡易密碼鎖 ---
+# --- 0. 簡易密碼鎖 (美化版) ---
 def check_password():
     """如果輸入正確密碼則回傳 True"""
     if "password_correct" not in st.session_state:
-        # 顯示輸入框
-        password = st.text_input("請輸入密碼以存取雷達：", type="password")
-        if st.button("登入"):
-            if password == "19930522": # 在這裡設定你要給朋友的密碼
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("密碼錯誤！")
+        # --- 新增的標題與裝飾 ---
+        st.markdown("<h1 style='text-align: center;'>🐝 🐝 🐝 🐝 🐝</h1>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>阿峰的回測追蹤</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>專屬雷達系統，請輸入通關密語</p>", unsafe_allow_html=True)
+        
+        # 為了美觀，將輸入框放在中間
+        _, col_mid, _ = st.columns([1, 2, 1])
+        with col_mid:
+            password = st.text_input("密碼", type="password")
+            if st.button("確認登入"):
+                if password == "你的專屬密碼": # 這裡記得填入你的密碼
+                    st.session_state["password_correct"] = True
+                    st.rerun()
+                else:
+                    st.error("🚫 密碼錯誤，請再試一次")
+        
+        st.markdown("<h3 style='text-align: center;'>🐝 🐝 🐝 🐝 🐝</h3>", unsafe_allow_html=True)
         return False
     return True
-
-if not check_password():
-    st.stop() # 密碼錯誤就不跑下面的內容
-
-# --- 接下來才是原本的 1. 配置、2. 側邊欄... ---
 
 # --- 1. 配置 ---
 st.set_page_config(page_title="台股量價全視角雷達", layout="wide")
