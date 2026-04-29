@@ -22,11 +22,6 @@ def check_password():
 
 if not check_password():
     st.stop() # 密碼錯誤就不跑下面的內容
-if password == "19930522":
-    st.session_state["password_correct"] = True
-    # 偷偷在黑盒子裡印出登入成功訊息 (只有你在 Manage app 的日誌看得到)
-    print(f"通知：有人在 {time.strftime('%Y-%m-%d %H:%M:%S')} 成功登入雷達了！")
-    st.rerun()
 
 # --- 接下來才是原本的 1. 配置、2. 側邊欄... ---
 
