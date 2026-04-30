@@ -101,20 +101,31 @@ with st.sidebar:
     except:
         st.caption("📡 訊號掃描中... 暫無登入紀錄")
 
-# --- 4. 清單抓取 ---
+# --- 4. 清單抓取 (強化備援版) ---
 def get_full_industry_list(category):
+    # 建立一份核心權值股備援清單，確保斷線時至少還能掃這些
+    backup_list = ["2330.TW", "2454.TW", "2317.TW", "2303.TW", "3711.TW", "2382.TW", "3231.TW", "3034.TW", "2379.TW", "6669.TW", "3037.TW", "3017.TW", "2308.TW"]
+
     try:
+        # 1. 優先讀取本地 JSON
         with open('stock_list.json', 'r', encoding='utf-8') as f:
             all_lists = json.load(f)
         if category in all_lists:
             return all_lists[category]
+        
+        # 2. 嘗試抓取 FinMind
         dl = DataLoader()
         df = dl.taiwan_stock_info()
-        stocks = df[df['industry_category'].str.contains(category.replace("業", ""))]
-        stock_ids = stocks[stocks['stock_id'].str.len() == 4]['stock_id'].tolist()
-        return [f"{s}.TW" for s in stock_ids]
+        if not df.empty:
+            stocks = df[df['industry_category'].str.contains(category.replace("業", ""))]
+            stock_ids = stocks[stocks['stock_id'].str.len() == 4]['stock_id'].tolist()
+            res = [f"{s}.TW" for s in stock_ids]
+            if len(res) > 0: return res
+        
+        return backup_list
     except:
-        return ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "3131.TW"]
+        # 3. 最終保險絲 (如果連 JSON 或 FinMind 都失敗)
+        return backup_list
 
 # --- 5. 核心分析函數 (已添加分析指標) ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
