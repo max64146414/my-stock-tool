@@ -139,7 +139,7 @@ def get_full_industry_list(category):
         # 報錯時，回傳備援清單 (也就是你看到的 8 檔)
         return backup_map.get(category, ["2330.TW"])
 
-# --- 5. 核心分析函數 (已添加分析指標) ---
+# --- 5. 核心分析函數 (已整合風控與 PE 邏輯) ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
     try:
         df = yf.download(symbol, period="200d", progress=False, threads=False)
@@ -159,19 +159,19 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         m60_prev = float(ma60.iloc[-2])
 
         hit_data = None
+        # --- 模式 A: 均線回檔 ---
         if mode_choice == "均線回檔 (趨勢追蹤)":
             if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200:
                 dist_10, dist_20 = (curr_p - m10) / m10, (curr_p - m20) / m20
                 if abs(dist_10) < param1 or abs(dist_20) < param1:
-                    # 添加職業指標與停損位
                     pro_metrics = check_professional_metrics(df.tail(20))
-                    struct_stop = df['Low'].iloc[-5:].min()
                     hit_data = {
                         "id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, 
                         "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(40), 
-                        "status": "🛡️ 回檔支撐", "pro": pro_metrics, "stop": struct_stop
+                        "status": "🛡️ 回檔支撐", "pro": pro_metrics
                     }
 
+        # --- 模式 B: 均線糾纏 ---
         elif mode_choice == "均線糾纏 (底部突破)":
             ma_list = [m10, m20, m60_curr]
             spread = (max(ma_list) - min(ma_list)) / min(ma_list)
@@ -184,30 +184,29 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
                     "df": df.tail(40), "status": status_text, "spread": spread*100
                 }
 
-        # 統一抓取 PE
+        # --- 這裡就是你說的「尾端」：當股票符合條件，補上 PE 與 風控計算 ---
         if hit_data:
+            # 1. 抓取 PE
             try:
                 t_obj = yf.Ticker(symbol)
                 hit_data['pe'] = t_obj.info.get('trailingPE')
             except:
                 hit_data['pe'] = None
-            return hit_data
-        return None
-    except:
-        return None
-
-# --- [分析函數內的運算邏輯] ---
-        if hit_data:
-            # 1. 結構停損位 (近 5 日低點)
-            struct_stop = df['Low'].iloc[-5:].min()
-            # 2. 移動停利位 (參考 20MA)
+            
+            # 2. 計算風控價位 (這就是新增的地方)
+            struct_stop = df['Low'].iloc[-5:].min()  # 近5日低點
             hit_data["stop_price"] = struct_stop
-            hit_data["profit_stop"] = m20
-            # 3. 預期風險百分比
+            hit_data["profit_stop"] = m20            # 移動停利參考 20MA
             hit_data["risk_pct"] = ((curr_p - struct_stop) / curr_p) * 100
+            
             return hit_data
+            
+        return None
+    except Exception as e:
+        print(f"分析出錯: {e}")
+        return None
 
-# --- 6. 執行顯示 ---
+# --- 6. 執行顯示 (手機卡片優化版：含評價與風控) ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
     st.info(f"🔎 模式：{mode} | 正在掃描 {len(full_list)} 檔標的...")
@@ -215,7 +214,7 @@ if run_btn:
     bar = st.progress(0)
     for i, s in enumerate(full_list):
         p1 = sensitivity if mode == "均線回檔 (趨勢追蹤)" else entangle_limit
-        p2 = vol_boost if mode == "均線糾纏 (底部突破)" else None
+        p2 = vol_boost if mode == "均線糾顫 (底部突破)" else None
         res = analyze_stock(s, mode, p1, p2)
         if res: hits.append(res)
         bar.progress((i + 1) / len(full_list))
@@ -227,37 +226,59 @@ if run_btn:
                 clean_id = hit['id'].replace(".TW", "")
                 tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
                 
-                # PE 處理
+                # --- [A] 本益比紅黃綠燈評價 ---
                 pe_val = hit.get('pe')
-                pe_display = f"{pe_val:.1f}" if pe_val else "N/A"
-                
+                if pe_val:
+                    if pe_val < 15: pe_tag = f"🟢 低估 ({pe_val:.1f})"
+                    elif pe_val < 25: pe_tag = f"🟡 常態 ({pe_val:.1f})"
+                    else: pe_tag = f"🔴 偏高 ({pe_val:.1f})"
+                else:
+                    pe_tag = "⚪ 暫無數據"
+
+                # --- [B] 標題與基本指標 ---
                 st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
                 c1, c2, c3 = st.columns(3)
                 c1.metric("現價", f"{hit['price']:.1f}")
                 c2.metric("量能變動", f"{hit['vol_diff']:.1f}%")
-                c3.metric("本益比(PE)", pe_display)
+                c3.metric("本益比評價", pe_tag) # 這裡顯示評價
                 
-                # 職業分析看板 (新增在畫圖上方，方便手機閱讀)
+                # --- [C] 職業分析與風控看板 ---
+                # 職業視角
                 if "pro" in hit:
                     pro = hit['pro']
-                    st.info(f"💡 **職業視角分析**：\n- 動能衰減：{'✅ 賣壓竭盡' if pro['decay'] else '❌ 仍有壓力'}\n- 訊號狀態：{pro['signal']}\n- **策略節奏：{pro['action']}**\n- 🛑 **結構停損位：{hit['stop']:.1f}**")
+                    st.info(f"💡 **職業視角分析**：\n- 訊號狀態：{pro['signal']}\n- **策略節奏：{pro['action']}**")
 
-                # 畫圖
-                fig = go.Figure(data=[go.Candlestick(x=hit['df'].index, open=hit['df']['Open'], high=hit['df']['High'], low=hit['df']['Low'], close=hit['df']['Close'], name="K")])
+                # 自動風控試算
+                k1, k2, k3 = st.columns(3)
+                k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
+                          delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
+                k2.metric("🎯 移動停利", f"{hit['profit_stop']:.1f}", help="參考 20MA 位置")
+                k3.write(f"⚖️ **風險比**\n`{hit['risk_pct']:.1f}%`")
+
+                # --- [D] 畫圖 ---
+                fig = go.Figure(data=[go.Candlestick(
+                    x=hit['df'].index, open=hit['df']['Open'], 
+                    high=hit['df']['High'], low=hit['df']['Low'], 
+                    close=hit['df']['Close'], name="K")])
+                
+                # 加入均線 (10, 20, 60)
                 fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(10).mean(), name="10", line=dict(color='orange', width=1.5)))
                 fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(20).mean(), name="20", line=dict(color='red', width=1.5)))
-                fig.update_layout(xaxis_rangeslider_visible=False, height=300, margin=dict(l=10, r=10, t=10, b=10), template="plotly_dark", showlegend=False)
+                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(60).mean(), name="60", line=dict(color='green', width=2)))
+                
+                fig.update_layout(xaxis_rangeslider_visible=False, height=300, margin=dict(l=5, r=5, t=5, b=5), template="plotly_dark", showlegend=False)
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                 
-                # 功能按鈕
+                # --- [E] 功能按鈕 ---
                 b1, b2, b3 = st.columns(3)
                 b1.link_button("📈 圖表", tv_url, use_container_width=True)
                 b2.link_button("💰 籌碼", f"https://www.wantgoo.com/stock/{clean_id}/chips", use_container_width=True)
                 b3.link_button("🏢 法人", f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-trading", use_container_width=True)
                 
                 with st.expander(f"📋 生成 Gemini 復盤資料"):
-                    st.code(f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n數據: 現價{hit['price']}, PE {pe_display}")
+                    st.code(f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n數據: 現價{hit['price']}, PE評價 {pe_tag}, 建議停損 {hit['stop_price']}")
+                
                 st.divider()
     else:
-        st.warning("查無符合標的。")
+        st.warning("查無符合標的，建議放寬門檻再試一次。")
