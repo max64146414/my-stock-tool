@@ -56,7 +56,7 @@ def check_professional_metrics(df):
         black_bodies = bodies[is_black]
         
         # 動能衰減判斷
-        recent_black = black_bodies.iloc[-3:].mean() if len(black_bodies) >= 3 else 0
+        recent_black = black_bodies.iloc[-3:].mean() if len(black_bodies) >= 2 else 0
         prev_black = black_bodies.iloc[-10:-3].mean() if len(black_bodies) >= 10 else 999
         momentum_decay = recent_black < prev_black
         
@@ -164,7 +164,7 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
             if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200:
                 dist_10, dist_20 = (curr_p - m10) / m10, (curr_p - m20) / m20
                 if abs(dist_10) < param1 or abs(dist_20) < param1:
-                    pro_metrics = check_professional_metrics(df.tail(20))
+                    pro_metrics = check_professional_metrics(df.tail(40))
                     hit_data = {
                         "id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, 
                         "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(40), 
