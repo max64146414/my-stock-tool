@@ -101,44 +101,40 @@ with st.sidebar:
     except:
         st.caption("📡 訊號掃描中... 暫無登入紀錄")
 
-# --- 4. 清單抓取 (穩定強化版) ---
+# --- 4. 清單抓取 (修復 JSON 讀取失敗問題) ---
 def get_full_industry_list(category):
-    # 定義各產業的「龍頭保險清單」，防止 FinMind 斷線時只剩 5 檔
+    # 這就是你現在看到的 8 檔來源 (保險絲)
     backup_map = {
-        "★台積電大聯盟 (設備/耗材/IP)": ["2330.TW", "3010.TW", "3028.TW", "6187.TW", "3131.TW", "3583.TW", "6196.TW", "3443.TW", "3661.TW", "4770.TW", "8028.TW"],
-        "半導體": ["2330.TW", "2454.TW", "2303.TW", "3711.TW", "2337.TW", "2344.TW", "3034.TW", "2408.TW", "6770.TW", "5347.TW"],
-        "光電業": ["2409.TW", "3481.TW", "3008.TW", "2374.TW", "2406.TW", "3376.TW", "3406.TW", "6443.TW"],
-        "電子零組件": ["2317.TW", "2308.TW", "3037.TW", "2367.TW", "2313.TW", "2368.TW", "8046.TW", "6213.TW"],
-        "電腦及週邊設備業": ["2382.TW", "3231.TW", "2357.TW", "2376.TW", "2353.TW", "2324.TW", "6669.TW", "2395.TW"],
-        "通信網路業": ["2412.TW", "4904.TW", "3045.TW", "2345.TW", "6285.TW", "5388.TW", "3380.TW", "8044.TW"],
-        "電機機械": ["1513.TW", "1504.TW", "1503.TW", "1519.TW", "1514.TW", "2049.TW", "1590.TW", "2371.TW"],
-        "其他電子業": ["2317.TW", "2354.TW", "2385.TW", "6115.TW", "6206.TW", "3376.TW"]
+        "電子零組件": ["2317.TW", "2308.TW", "3037.TW", "2367.TW", "2313.TW", "2368.TW", "8046.TW", "6213.TW"]
     }
-    # 全域通用備援 (如果選的類別不在上面)
-    universal_backup = ["2330.TW", "2317.TW", "2454.TW", "2303.TW", "3711.TW", "2382.TW", "3231.TW"]
 
     try:
-        # 1. 優先讀取本地 JSON
+        # 1. 開啟 JSON
         with open('stock_list.json', 'r', encoding='utf-8') as f:
             all_lists = json.load(f)
-        if category in all_lists and len(all_lists[category]) > 0:
-            return all_lists[category]
         
-        # 2. 嘗試動態抓取 FinMind
+        # --- 強化匹配邏輯 ---
+        # 移除 category 的「★」符號與「業」字來做模糊比對
+        clean_cat = category.replace("★", "").replace("業", "").strip()
+        
+        # 建立一個暫時的字典，把 JSON 裡所有的 Key 也都簡化來比對
+        for raw_key in all_lists.keys():
+            clean_key = raw_key.replace("★", "").replace("業", "").strip()
+            if clean_cat in clean_key or clean_key in clean_cat:
+                res = all_lists[raw_key]
+                if len(res) > 0:
+                    return res # 只要找到了，就直接回傳 JSON 裡那幾百檔
+
+        # 2. 如果 JSON 真的找不到，才去問 FinMind
         dl = DataLoader()
         df = dl.taiwan_stock_info()
-        if not df.empty:
-            stocks = df[df['industry_category'].str.contains(category.replace("業", ""))]
-            # 確保只抓 4 位數代碼的股票 (過濾掉權證、存託憑證)
-            stock_ids = stocks[stocks['stock_id'].str.len() == 4]['stock_id'].tolist()
-            res = [f"{s}.TW" for s in stock_ids]
-            if len(res) > 0: return res
-        
-        # 3. 若 FinMind 沒回應，回傳對應產業的龍頭清單
-        return backup_map.get(category, universal_backup)
-    except:
-        # 4. 最終報警保險絲
-        return backup_map.get(category, universal_backup)
+        stocks = df[df['industry_category'].str.contains(clean_cat)]
+        res = [f"{s}.TW" for s in stocks['stock_id'].tolist() if len(s) == 4]
+        return res if len(res) > 0 else backup_map.get(category, ["2330.TW"])
+
+    except Exception as e:
+        # 報錯時，回傳備援清單 (也就是你看到的 8 檔)
+        return backup_map.get(category, ["2330.TW"])
 
 # --- 5. 核心分析函數 (已添加分析指標) ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
