@@ -18,22 +18,25 @@ def check_password():
         with col_mid:
             password = st.text_input("密碼", type="password")
             if st.button("確認登入"):
-                if password == "19930522": 
+                # 建立密碼對應表
+                user_map = {
+                    "19930522": "阿峰",
+                    "820522": "脆皮",  # 假設給阿嬤的密碼
+                    "0522": "柔"
+                }
+                
+                if password in user_map:
                     st.session_state["password_correct"] = True
+                    user_name = user_map[password] # 自動抓取對應的人名
                     
-                    # --- 訪客紀錄邏輯 ---
+                    # 紀錄登入
                     now = datetime.datetime.now() + datetime.timedelta(hours=8)
-                    time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-                    user_name = "阿峰" 
-                    log_entry = f"{time_str} - {user_name} 登入系統\n"
+                    log_entry = f"{now.strftime('%Y-%m-%d %H:%M:%S')} - {user_name} 登入系統\n"
                     with open("login_log.txt", "a", encoding="utf-8") as f:
                         f.write(log_entry)
-                    
                     st.rerun()
                 else:
-                    st.error("🚫 密碼錯誤，請再試一次")
-        
-        st.markdown("<h3 style='text-align: center;'>🐝 🐝 🐝 🐝 🐝</h3>", unsafe_allow_html=True)
+                    st.error("🚫 密碼錯誤")
         return False
     return True
 
