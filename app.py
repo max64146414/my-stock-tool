@@ -206,7 +206,7 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         print(f"分析出錯: {e}")
         return None
 
-# --- 6. 執行顯示 (手機卡片優化版：含評價與風控) ---
+# --- 6. 執行顯示 (確保量能與所有指標完整顯示) ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
     st.info(f"🔎 模式：{mode} | 正在掃描 {len(full_list)} 檔標的...")
@@ -214,7 +214,7 @@ if run_btn:
     bar = st.progress(0)
     for i, s in enumerate(full_list):
         p1 = sensitivity if mode == "均線回檔 (趨勢追蹤)" else entangle_limit
-        p2 = vol_boost if mode == "均線糾顫 (底部突破)" else None
+        p2 = vol_boost if mode == "均線糾纏 (底部突破)" else None
         res = analyze_stock(s, mode, p1, p2)
         if res: hits.append(res)
         bar.progress((i + 1) / len(full_list))
@@ -226,7 +226,7 @@ if run_btn:
                 clean_id = hit['id'].replace(".TW", "")
                 tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
                 
-                # --- [A] 本益比紅黃綠燈評價 ---
+                # --- [A] PE 評價處理 ---
                 pe_val = hit.get('pe')
                 if pe_val:
                     if pe_val < 15: pe_tag = f"🟢 低估 ({pe_val:.1f})"
@@ -235,34 +235,43 @@ if run_btn:
                 else:
                     pe_tag = "⚪ 暫無數據"
 
-                # --- [B] 標題與基本指標 ---
+                # --- [B] 標題與第一排核心指標 (包含量能) ---
                 st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
+                # 確保這裡 c1, c2, c3 都有對應到正確變數
                 c1, c2, c3 = st.columns(3)
                 c1.metric("現價", f"{hit['price']:.1f}")
-                c2.metric("量能變動", f"{hit['vol_diff']:.1f}%")
-                c3.metric("本益比評價", pe_tag) # 這裡顯示評價
                 
-                # --- [C] 職業分析與風控看板 ---
-                # 職業視角
+                # 強調量能顯示：若大於 50% 顯示綠色(delta)，若小於 0 顯示紅色
+                vol_val = hit['vol_diff']
+                c2.metric("量能變動", f"{vol_val:.1f}%", delta=f"{vol_val:.1f}%")
+                
+                c3.metric("本益比評價", pe_tag)
+                
+                # --- [C] 職業視角面板 (補回原本縮小的細節) ---
                 if "pro" in hit:
                     pro = hit['pro']
-                    st.info(f"💡 **職業視角分析**：\n- 訊號狀態：{pro['signal']}\n- **策略節奏：{pro['action']}**")
+                    # 判斷動能衰減的小圖示
+                    decay_icon = "✅ 賣壓竭盡" if pro['decay'] else "❌ 仍有賣壓"
+                    st.info(f"💡 **職業視角**：{decay_icon} | {pro['signal']} | **策略**：{pro['action']}")
 
-                # 自動風控試算
+                # --- [D] 自動風控看板 (第二排指標) ---
                 k1, k2, k3 = st.columns(3)
+                # 建議停損
                 k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
                           delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
+                # 移動停利
                 k2.metric("🎯 移動停利", f"{hit['profit_stop']:.1f}", help="參考 20MA 位置")
-                k3.write(f"⚖️ **風險比**\n`{hit['risk_pct']:.1f}%`")
+                # 風險百分比
+                k3.write(f"⚖️ **最大風險**\n`{hit['risk_pct']:.1f}%`")
 
-                # --- [D] 畫圖 ---
+                # --- [E] 畫圖與按鈕 ---
                 fig = go.Figure(data=[go.Candlestick(
                     x=hit['df'].index, open=hit['df']['Open'], 
                     high=hit['df']['High'], low=hit['df']['Low'], 
                     close=hit['df']['Close'], name="K")])
                 
-                # 加入均線 (10, 20, 60)
+                # 均線輔助
                 fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(10).mean(), name="10", line=dict(color='orange', width=1.5)))
                 fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(20).mean(), name="20", line=dict(color='red', width=1.5)))
                 fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(60).mean(), name="60", line=dict(color='green', width=2)))
@@ -270,15 +279,15 @@ if run_btn:
                 fig.update_layout(xaxis_rangeslider_visible=False, height=300, margin=dict(l=5, r=5, t=5, b=5), template="plotly_dark", showlegend=False)
                 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
                 
-                # --- [E] 功能按鈕 ---
+                # 功能按鈕
                 b1, b2, b3 = st.columns(3)
                 b1.link_button("📈 圖表", tv_url, use_container_width=True)
                 b2.link_button("💰 籌碼", f"https://www.wantgoo.com/stock/{clean_id}/chips", use_container_width=True)
                 b3.link_button("🏢 法人", f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-trading", use_container_width=True)
                 
                 with st.expander(f"📋 生成 Gemini 復盤資料"):
-                    st.code(f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n數據: 現價{hit['price']}, PE評價 {pe_tag}, 建議停損 {hit['stop_price']}")
+                    st.code(f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n數據: 現價{hit['price']}, 預期風險 {hit['risk_pct']:.1f}%")
                 
                 st.divider()
     else:
-        st.warning("查無符合標的，建議放寬門檻再試一次。")
+        st.warning("查無符合標的。")
