@@ -196,6 +196,17 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
     except:
         return None
 
+# --- [分析函數內的運算邏輯] ---
+        if hit_data:
+            # 1. 結構停損位 (近 5 日低點)
+            struct_stop = df['Low'].iloc[-5:].min()
+            # 2. 移動停利位 (參考 20MA)
+            hit_data["stop_price"] = struct_stop
+            hit_data["profit_stop"] = m20
+            # 3. 預期風險百分比
+            hit_data["risk_pct"] = ((curr_p - struct_stop) / curr_p) * 100
+            return hit_data
+
 # --- 6. 執行顯示 ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
