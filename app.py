@@ -151,7 +151,14 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         close = df['Close'].astype(float).squeeze().dropna()
         volume = df['Volume'].astype(float).squeeze().dropna()
         ma10, ma20, ma60 = close.rolling(10).mean(), close.rolling(20).mean(), close.rolling(60).mean()
-        
+
+        # --- 新增：計算布林通道並存入 DataFrame 以供畫圖使用 ---
+        std20 = close.rolling(20).std()
+        df['MA10'] = ma10
+        df['MA20'] = ma20
+        df['MA60'] = ma60
+        df['BB_Upper'] = ma20 + 2 * std20
+        df['BB_Lower'] = ma20 - 2 * std20
         today_vol = volume.iloc[-1]
         avg_vol_5d = volume.iloc[-6:-1].mean()
         vol_diff_pct = ((today_vol - avg_vol_5d) / avg_vol_5d) * 100 if avg_vol_5d > 0 else 0
@@ -265,69 +272,69 @@ if run_btn:
                 # --- [B] 標題與第一排核心指標 (改為 4 個欄位) ---
                 st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
-                # 這裡原本是 c1, c2, c3 = st.columns(3)，改成 4 個
-                c1, c2, c3, c4 = st.columns(4)
+                # --- [B] 標題與核心指標 (優化版：縮小 PE/PB 字體) ---
+                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
+                
+                # 調整欄位比例，讓文字有足夠空間
+                c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
                 c1.metric("現價", f"{hit['price']:.1f}")
                 
                 vol_val = hit['vol_diff']
                 c2.metric("量能變動", f"{vol_val:.1f}%", delta=f"{vol_val:.1f}%")
-                c3.metric("本益比(PE)", pe_tag)
-                # 新增 PB 儀表板
-                c4.metric("淨值比(PB)", pb_tag, help="科技股常態為 1.5~3.5，大於 6 代表市場極度狂熱")
                 
-                # --- [C] 職業視角面板 ---
-                if "pro" in hit:
-# ... (下面的代碼保持不變，繼續接風控看板與畫圖) ...
-                    pro = hit['pro']
-                    # 判斷動能衰減的小圖示
-                    decay_icon = "✅ 賣壓竭盡" if pro['decay'] else "❌ 仍有賣壓"
-                    st.info(f"💡 **職業視角**：{decay_icon} | {pro['signal']} | **策略**：{pro['action']}")
+                # 改用 HTML/Markdown 客製化字體大小 (16px)，看起來更精緻
+                c3.write("本益比(PE)")
+                c3.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pe_tag}</div>", unsafe_allow_html=True)
+                
+                c4.write("淨值比(PB)")
+                c4.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pb_tag}</div>", unsafe_allow_html=True)
+                
+                # --- [C] 職業視角與風控 ---
+                if "stop_price" in hit:
+                    k1, k2, k3 = st.columns(3)
+                    k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
+                              delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
+                    k2.metric("🎯 移動停利", f"{hit['profit_stop']:.1f}", help="參考 20MA 位置")
+                    k3.write(f"⚖️ **最大風險**\n`{hit['risk_pct']:.1f}%`")
 
-                # --- [D] 自動風控看板 (第二排指標) ---
-                k1, k2, k3 = st.columns(3)
-                # 建議停損
-                k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
-                          delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
-                # 移動停利
-                k2.metric("🎯 移動停利", f"{hit['profit_stop']:.1f}", help="參考 20MA 位置")
-                # 風險百分比
-                k3.write(f"⚖️ **最大風險**\n`{hit['risk_pct']:.1f}%`")
-
-               # --- [E] 畫圖 (升級版：K棒 + 成交量) ---
+                # --- [E] 畫圖 (終極版：K棒 + 均線 + 布林通道 + 成交量) ---
                 import plotly.graph_objects as go
-                from plotly.subplots import make_subplots # 新增這行來製作上下分割圖表
+                from plotly.subplots import make_subplots
                 
-                # 1. 建立上下兩層的畫布 (上面佔比 80%，下面佔比 20%，共用 X 軸時間)
+                df_plot = hit['df']
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                                     vertical_spacing=0.03, row_heights=[0.8, 0.2])
 
-                # 2. 畫上半部的 K 線
+                # 1. 畫布林通道 (畫在最底層，用半透明灰色)
+                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Upper'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), name="上軌", hoverinfo='none'), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Lower'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(150, 150, 150, 0.1)', name="下軌", hoverinfo='none'), row=1, col=1)
+
+                # 2. 畫均線 (橘10, 紅20, 綠60)
+                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA10'], line=dict(color='#FFA500', width=1.5), name="10MA"), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA20'], line=dict(color='#FF1493', width=1.5), name="20MA"), row=1, col=1)
+                fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA60'], line=dict(color='#32CD32', width=1.5), name="60MA"), row=1, col=1)
+
+                # 3. 畫 K 棒 (疊在最上層)
                 fig.add_trace(go.Candlestick(
-                    x=hit['df'].index, open=hit['df']['Open'], 
-                    high=hit['df']['High'], low=hit['df']['Low'], 
-                    close=hit['df']['Close'], name="K棒"
+                    x=df_plot.index, open=df_plot['Open'], 
+                    high=df_plot['High'], low=df_plot['Low'], 
+                    close=df_plot['Close'], name="K棒"
                 ), row=1, col=1)
 
-                # 3. 判斷台股成交量顏色 (收盤 >= 開盤為紅色，反之為綠色)
-                colors = ['#EF5350' if c >= o else '#26A69A' 
-                          for c, o in zip(hit['df']['Close'], hit['df']['Open'])]
-
-                # 4. 畫下半部的成交量柱狀圖
+                # 4. 畫下半部成交量
+                colors = ['#EF5350' if c >= o else '#26A69A' for c, o in zip(df_plot['Close'], df_plot['Open'])]
                 fig.add_trace(go.Bar(
-                    x=hit['df'].index, y=hit['df']['Volume'], 
+                    x=df_plot.index, y=df_plot['Volume'], 
                     marker_color=colors, name="成交量"
                 ), row=2, col=1)
 
-                # 5. 版面微調：關閉原本佔空間的範圍拉桿，並調整整體高度讓手機看更舒服
                 fig.update_layout(
                     xaxis_rangeslider_visible=False,
                     xaxis2_rangeslider_visible=False,
                     margin=dict(l=10, r=10, t=30, b=10),
                     height=450,
-                    showlegend=False # 隱藏圖例讓畫面更簡潔
+                    showlegend=False
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
                 st.divider()
-    else:
-        st.warning("查無符合標的。")
