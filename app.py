@@ -293,29 +293,41 @@ if run_btn:
                 # 風險百分比
                 k3.write(f"⚖️ **最大風險**\n`{hit['risk_pct']:.1f}%`")
 
-                # --- [E] 畫圖與按鈕 ---
-                fig = go.Figure(data=[go.Candlestick(
+               # --- [E] 畫圖 (升級版：K棒 + 成交量) ---
+                import plotly.graph_objects as go
+                from plotly.subplots import make_subplots # 新增這行來製作上下分割圖表
+                
+                # 1. 建立上下兩層的畫布 (上面佔比 80%，下面佔比 20%，共用 X 軸時間)
+                fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                                    vertical_spacing=0.03, row_heights=[0.8, 0.2])
+
+                # 2. 畫上半部的 K 線
+                fig.add_trace(go.Candlestick(
                     x=hit['df'].index, open=hit['df']['Open'], 
                     high=hit['df']['High'], low=hit['df']['Low'], 
-                    close=hit['df']['Close'], name="K")])
+                    close=hit['df']['Close'], name="K棒"
+                ), row=1, col=1)
+
+                # 3. 判斷台股成交量顏色 (收盤 >= 開盤為紅色，反之為綠色)
+                colors = ['#EF5350' if c >= o else '#26A69A' 
+                          for c, o in zip(hit['df']['Close'], hit['df']['Open'])]
+
+                # 4. 畫下半部的成交量柱狀圖
+                fig.add_trace(go.Bar(
+                    x=hit['df'].index, y=hit['df']['Volume'], 
+                    marker_color=colors, name="成交量"
+                ), row=2, col=1)
+
+                # 5. 版面微調：關閉原本佔空間的範圍拉桿，並調整整體高度讓手機看更舒服
+                fig.update_layout(
+                    xaxis_rangeslider_visible=False,
+                    xaxis2_rangeslider_visible=False,
+                    margin=dict(l=10, r=10, t=30, b=10),
+                    height=450,
+                    showlegend=False # 隱藏圖例讓畫面更簡潔
+                )
                 
-                # 均線輔助
-                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(10).mean(), name="10", line=dict(color='orange', width=1.5)))
-                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(20).mean(), name="20", line=dict(color='red', width=1.5)))
-                fig.add_trace(go.Scatter(x=hit['df'].index, y=hit['df']['Close'].rolling(60).mean(), name="60", line=dict(color='green', width=2)))
-                
-                fig.update_layout(xaxis_rangeslider_visible=False, height=300, margin=dict(l=5, r=5, t=5, b=5), template="plotly_dark", showlegend=False)
-                st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-                
-                # 功能按鈕
-                b1, b2, b3 = st.columns(3)
-                b1.link_button("📈 圖表", tv_url, use_container_width=True)
-                b2.link_button("💰 籌碼", f"https://www.wantgoo.com/stock/{clean_id}/chips", use_container_width=True)
-                b3.link_button("🏢 法人", f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-trading", use_container_width=True)
-                
-                with st.expander(f"📋 生成 Gemini 復盤資料"):
-                    st.code(f"教練，幫我復盤這檔標的：\n代號: {hit['id']}\n模式: {mode}\n數據: 現價{hit['price']}, 預期風險 {hit['risk_pct']:.1f}%")
-                
+                st.plotly_chart(fig, use_container_width=True)
                 st.divider()
     else:
         st.warning("查無符合標的。")
