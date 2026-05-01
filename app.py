@@ -222,9 +222,9 @@ if run_btn:
     
     if hits:
         # --- 自動排序邏輯 ---
-        if mode_choice == "均線回檔 (趨勢追蹤)":
+        if mode == "均線回檔 (趨勢追蹤)":
             hits = sorted(hits, key=lambda x: abs(x.get('d20', 100)))
-        elif mode_choice == "均線糾纏 (底部突破)":
+        elif mode == "均線糾纏 (底部突破)":
             hits = sorted(hits, key=lambda x: x.get('spread', 100))
 
         st.divider()
