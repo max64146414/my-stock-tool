@@ -186,13 +186,17 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
                 }
 
         # --- 這裡就是你說的「尾端」：當股票符合條件，補上 PE 與 風控計算 ---
+        # --- 這裡就是你說的「尾端」：當股票符合條件，補上 PE 與 風控計算 ---
         if hit_data:
-            # 1. 抓取 PE
+            # 1. 抓取 PE 與 PB
             try:
                 t_obj = yf.Ticker(symbol)
-                hit_data['pe'] = t_obj.info.get('trailingPE')
+                info = t_obj.info # 先把 info 存起來，避免重複呼叫拖慢速度
+                hit_data['pe'] = info.get('trailingPE') or info.get('forwardPE')
+                hit_data['pb'] = info.get('priceToBook') # 新增這行抓 PB
             except:
                 hit_data['pe'] = None
+                hit_data['pb'] = None # 新增這行
             
             # 2. 計算風控價位 (這就是新增的地方)
             struct_stop = df['Low'].iloc[-5:].min()  # 近5日低點
@@ -235,7 +239,7 @@ if run_btn:
                 clean_id = hit['id'].replace(".TW", "")
                 tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
                 
-                # --- [A] PE 評價處理 ---
+                # --- [A-1] PE 評價處理 ---
                 pe_val = hit.get('pe')
                 if pe_val:
                     if pe_val < 15: pe_tag = f"🟢 低估 ({pe_val:.1f})"
@@ -244,21 +248,36 @@ if run_btn:
                 else:
                     pe_tag = "⚪ 暫無數據"
 
-                # --- [B] 標題與第一排核心指標 (包含量能) ---
+                # --- [A-2] 🌟 新增：PB 評價處理 (科技/半導體專用標準) ---
+                pb_val = hit.get('pb')
+                if pb_val:
+                    if pb_val < 1.5: 
+                        pb_tag = f"🟢 超跌便宜 ({pb_val:.2f})"
+                    elif pb_val < 3.5: 
+                        pb_tag = f"🟡 科技常態 ({pb_val:.2f})"
+                    elif pb_val < 6.0:
+                        pb_tag = f"🟠 享有溢價 ({pb_val:.2f})"
+                    else: 
+                        pb_tag = f"🔴 極度昂貴 ({pb_val:.2f})"
+                else:
+                    pb_tag = "⚪ 暫無數據"
+
+                # --- [B] 標題與第一排核心指標 (改為 4 個欄位) ---
                 st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
                 
-                # 確保這裡 c1, c2, c3 都有對應到正確變數
-                c1, c2, c3 = st.columns(3)
+                # 這裡原本是 c1, c2, c3 = st.columns(3)，改成 4 個
+                c1, c2, c3, c4 = st.columns(4)
                 c1.metric("現價", f"{hit['price']:.1f}")
                 
-                # 強調量能顯示：若大於 50% 顯示綠色(delta)，若小於 0 顯示紅色
                 vol_val = hit['vol_diff']
                 c2.metric("量能變動", f"{vol_val:.1f}%", delta=f"{vol_val:.1f}%")
+                c3.metric("本益比(PE)", pe_tag)
+                # 新增 PB 儀表板
+                c4.metric("淨值比(PB)", pb_tag, help="科技股常態為 1.5~3.5，大於 6 代表市場極度狂熱")
                 
-                c3.metric("本益比評價", pe_tag)
-                
-                # --- [C] 職業視角面板 (補回原本縮小的細節) ---
+                # --- [C] 職業視角面板 ---
                 if "pro" in hit:
+# ... (下面的代碼保持不變，繼續接風控看板與畫圖) ...
                     pro = hit['pro']
                     # 判斷動能衰減的小圖示
                     decay_icon = "✅ 賣壓竭盡" if pro['decay'] else "❌ 仍有賣壓"
