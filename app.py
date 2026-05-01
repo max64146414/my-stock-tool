@@ -288,8 +288,7 @@ if run_btn:
                 else:
                     pb_tag = "⚪ 暫無數據"
 
-                # --- [B] 標題與核心指標 (🌟 優化版：顯示乾淨代碼 + 中文名稱) ---
-                # 這裡把原本重複的 ID 拿掉，換成乾淨的 "代碼 + 名稱"
+                # --- [B] 標題與核心指標 ---
                 st.markdown(f"### [{clean_id} {stock_name} ｜ {hit['status']}]({tv_url})")
                 
                 c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
@@ -305,20 +304,16 @@ if run_btn:
                 c4.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pb_tag}</div>", unsafe_allow_html=True)
                 
                 # ==========================================
-                # 🌟 補回：被阿峰雷達工程師(我)不小心弄丟的職業視角
+                # 💡 保留的「職業視角」在這裡！(緊接在 PB 的下面)
                 # ==========================================
                 if "pro" in hit:
                     pro = hit['pro']
                     decay_icon = "✅ 賣壓竭盡" if pro.get('decay') else "❌ 仍有賣壓"
                     st.info(f"💡 **職業視角**：{decay_icon} | {pro.get('signal', '')} | **策略**：{pro.get('action', '')}")
-                # ==========================================
 
-                # --- [C] 自動風控看板 ---
-                if "stop_price" in hit:
-                    k1, k2, k3 = st.columns(3)
-                    k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
-                              delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
-                # --- [C] 職業視角與風控 ---
+                # ==========================================
+                # 🛑 完整的「自動風控看板」(修復了重複顯示的問題)
+                # ==========================================
                 if "stop_price" in hit:
                     k1, k2, k3 = st.columns(3)
                     k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
