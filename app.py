@@ -231,6 +231,7 @@ if run_btn:
         if res: hits.append(res)
         bar.progress((i + 1) / len(full_list))
     
+    # 從這裡開始替換
     if hits:
         # --- 自動排序邏輯 ---
         if mode == "均線回檔 (趨勢追蹤)":
@@ -241,9 +242,31 @@ if run_btn:
         st.divider()
         st.success(f"🎯 掃描完成！共抓出 {len(hits)} 檔符合條件的標的。")
 
+        # ==========================================
+        # 🌟 新增：利用 FinMind 建立「代碼對應中文名稱」的字典
+        # 使用一天 (86400秒) 的快取，才不會每次掃描都重新下載名稱
+        # ==========================================
+        @st.cache_data(ttl=86400)
+        def get_stock_names():
+            try:
+                from FinMind.data import DataLoader
+                dl = DataLoader()
+                df_info = dl.taiwan_stock_info()
+                # 做出類似 {'2330': '台積電', '2317': '鴻海'} 的字典
+                return dict(zip(df_info['stock_id'], df_info['stock_name']))
+            except:
+                return {}
+        
+        name_map = get_stock_names()
+
         for hit in hits:
             with st.container():
+                # 清除 ".TW" 後綴，只保留數字代碼 (例如：2330)
                 clean_id = hit['id'].replace(".TW", "")
+                
+                # 🌟 從字典中抓取中文名稱，如果抓不到就留空
+                stock_name = name_map.get(clean_id, "") 
+                
                 tv_url = f"https://tw.tradingview.com/symbols/TWSE-{clean_id}/"
                 
                 # --- [A-1] PE 評價處理 ---
@@ -255,34 +278,26 @@ if run_btn:
                 else:
                     pe_tag = "⚪ 暫無數據"
 
-                # --- [A-2] 🌟 新增：PB 評價處理 (科技/半導體專用標準) ---
+                # --- [A-2] PB 評價處理 ---
                 pb_val = hit.get('pb')
                 if pb_val:
-                    if pb_val < 1.5: 
-                        pb_tag = f"🟢 超跌便宜 ({pb_val:.2f})"
-                    elif pb_val < 3.5: 
-                        pb_tag = f"🟡 科技常態 ({pb_val:.2f})"
-                    elif pb_val < 6.0:
-                        pb_tag = f"🟠 享有溢價 ({pb_val:.2f})"
-                    else: 
-                        pb_tag = f"🔴 極度昂貴 ({pb_val:.2f})"
+                    if pb_val < 1.5: pb_tag = f"🟢 超跌便宜 ({pb_val:.2f})"
+                    elif pb_val < 3.5: pb_tag = f"🟡 科技常態 ({pb_val:.2f})"
+                    elif pb_val < 6.0: pb_tag = f"🟠 享有溢價 ({pb_val:.2f})"
+                    else: pb_tag = f"🔴 極度昂貴 ({pb_val:.2f})"
                 else:
                     pb_tag = "⚪ 暫無數據"
 
-                # --- [B] 標題與第一排核心指標 (改為 4 個欄位) ---
-                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
+                # --- [B] 標題與核心指標 (🌟 優化版：顯示乾淨代碼 + 中文名稱) ---
+                # 這裡把原本重複的 ID 拿掉，換成乾淨的 "代碼 + 名稱"
+                st.markdown(f"### [{clean_id} {stock_name} ｜ {hit['status']}]({tv_url})")
                 
-                # --- [B] 標題與核心指標 (優化版：縮小 PE/PB 字體) ---
-                st.markdown(f"### [{hit['id']} {hit['status']}]({tv_url})")
-                
-                # 調整欄位比例，讓文字有足夠空間
                 c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
                 c1.metric("現價", f"{hit['price']:.1f}")
                 
                 vol_val = hit['vol_diff']
                 c2.metric("量能變動", f"{vol_val:.1f}%", delta=f"{vol_val:.1f}%")
                 
-                # 改用 HTML/Markdown 客製化字體大小 (16px)，看起來更精緻
                 c3.write("本益比(PE)")
                 c3.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pe_tag}</div>", unsafe_allow_html=True)
                 
@@ -297,7 +312,7 @@ if run_btn:
                     k2.metric("🎯 移動停利", f"{hit['profit_stop']:.1f}", help="參考 20MA 位置")
                     k3.write(f"⚖️ **最大風險**\n`{hit['risk_pct']:.1f}%`")
 
-                # --- [E] 畫圖 (終極版：K棒 + 均線 + 布林通道 + 成交量) ---
+                # --- [E] 畫圖 (K棒 + 均線 + 布林通道 + 成交量) ---
                 import plotly.graph_objects as go
                 from plotly.subplots import make_subplots
                 
@@ -305,23 +320,19 @@ if run_btn:
                 fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
                                     vertical_spacing=0.03, row_heights=[0.8, 0.2])
 
-                # 1. 畫布林通道 (畫在最底層，用半透明灰色)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Upper'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), name="上軌", hoverinfo='none'), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Lower'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(150, 150, 150, 0.1)', name="下軌", hoverinfo='none'), row=1, col=1)
 
-                # 2. 畫均線 (橘10, 紅20, 綠60)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA10'], line=dict(color='#FFA500', width=1.5), name="10MA"), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA20'], line=dict(color='#FF1493', width=1.5), name="20MA"), row=1, col=1)
                 fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA60'], line=dict(color='#32CD32', width=1.5), name="60MA"), row=1, col=1)
 
-                # 3. 畫 K 棒 (疊在最上層)
                 fig.add_trace(go.Candlestick(
                     x=df_plot.index, open=df_plot['Open'], 
                     high=df_plot['High'], low=df_plot['Low'], 
                     close=df_plot['Close'], name="K棒"
                 ), row=1, col=1)
 
-                # 4. 畫下半部成交量
                 colors = ['#EF5350' if c >= o else '#26A69A' for c, o in zip(df_plot['Close'], df_plot['Open'])]
                 fig.add_trace(go.Bar(
                     x=df_plot.index, y=df_plot['Volume'], 
