@@ -23,6 +23,7 @@ def check_password():
                     "19930522": "阿峰",
                     "820522": "脆皮",  # 假設給阿嬤的密碼
                     "0522": "柔"
+                    "159632": "阿曼達"
                 }
                 
                 if password in user_map:
@@ -220,7 +221,15 @@ if run_btn:
         bar.progress((i + 1) / len(full_list))
     
     if hits:
+        # --- 自動排序邏輯 ---
+        if mode_choice == "均線回檔 (趨勢追蹤)":
+            hits = sorted(hits, key=lambda x: abs(x.get('d20', 100)))
+        elif mode_choice == "均線糾纏 (底部突破)":
+            hits = sorted(hits, key=lambda x: x.get('spread', 100))
+
         st.divider()
+        st.success(f"🎯 掃描完成！共抓出 {len(hits)} 檔符合條件的標的。")
+
         for hit in hits:
             with st.container():
                 clean_id = hit['id'].replace(".TW", "")
