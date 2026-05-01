@@ -303,9 +303,6 @@ if run_btn:
                 
                 c4.write("淨值比(PB)")
                 c4.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pb_tag}</div>", unsafe_allow_html=True)
-
-                c4.write("淨值比(PB)")
-                c4.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pb_tag}</div>", unsafe_allow_html=True)
                 
                 # ==========================================
                 # 🌟 補回：被阿峰雷達工程師(我)不小心弄丟的職業視角
