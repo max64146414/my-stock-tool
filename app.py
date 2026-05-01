@@ -303,7 +303,24 @@ if run_btn:
                 
                 c4.write("淨值比(PB)")
                 c4.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pb_tag}</div>", unsafe_allow_html=True)
+
+                c4.write("淨值比(PB)")
+                c4.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pb_tag}</div>", unsafe_allow_html=True)
                 
+                # ==========================================
+                # 🌟 補回：被阿峰雷達工程師(我)不小心弄丟的職業視角
+                # ==========================================
+                if "pro" in hit:
+                    pro = hit['pro']
+                    decay_icon = "✅ 賣壓竭盡" if pro.get('decay') else "❌ 仍有賣壓"
+                    st.info(f"💡 **職業視角**：{decay_icon} | {pro.get('signal', '')} | **策略**：{pro.get('action', '')}")
+                # ==========================================
+
+                # --- [C] 自動風控看板 ---
+                if "stop_price" in hit:
+                    k1, k2, k3 = st.columns(3)
+                    k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", 
+                              delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
                 # --- [C] 職業視角與風控 ---
                 if "stop_price" in hit:
                     k1, k2, k3 = st.columns(3)
