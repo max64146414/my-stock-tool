@@ -330,7 +330,9 @@ if run_btn:
                 fig.add_trace(go.Candlestick(
                     x=df_plot.index, open=df_plot['Open'], 
                     high=df_plot['High'], low=df_plot['Low'], 
-                    close=df_plot['Close'], name="K棒"
+                    close=df_plot['Close'], name="K棒",
+                    increasing_line_color='#EF5350', # 漲：台股專屬紅色
+                    decreasing_line_color='#26A69A'  # 跌：台股專屬綠色
                 ), row=1, col=1)
 
                 colors = ['#EF5350' if c >= o else '#26A69A' for c, o in zip(df_plot['Close'], df_plot['Open'])]
