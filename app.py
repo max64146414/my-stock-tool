@@ -359,4 +359,68 @@ if run_btn:
                 )
                 
                 st.plotly_chart(fig, use_container_width=True)
+                # --- [E] 畫圖與籌碼查哨站 (左右分割排版) ---
+                import plotly.graph_objects as go
+                from plotly.subplots import make_subplots
+                
+                # 🌟 將畫面切割為左右兩塊 (比例 7 : 3)
+                col_chart, col_table = st.columns([7, 3])
+
+                # ==========================================
+                # 左半邊：K線圖區塊
+                # ==========================================
+                with col_chart:
+                    df_plot = hit['df']
+                    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                                        vertical_spacing=0.03, row_heights=[0.8, 0.2])
+
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Upper'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), name="上軌", hoverinfo='none'), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Lower'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(150, 150, 150, 0.1)', name="下軌", hoverinfo='none'), row=1, col=1)
+
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA10'], line=dict(color='#FFA500', width=1.5), name="10MA"), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA20'], line=dict(color='#FF1493', width=1.5), name="20MA"), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA60'], line=dict(color='#32CD32', width=1.5), name="60MA"), row=1, col=1)
+
+                    fig.add_trace(go.Candlestick(
+                        x=df_plot.index, open=df_plot['Open'], 
+                        high=df_plot['High'], low=df_plot['Low'], 
+                        close=df_plot['Close'], name="K棒",
+                        increasing_line_color='#EF5350', # 漲：台股專屬紅色
+                        decreasing_line_color='#26A69A'  # 跌：台股專屬綠色
+                    ), row=1, col=1)
+
+                    colors = ['#EF5350' if c >= o else '#26A69A' for c, o in zip(df_plot['Close'], df_plot['Open'])]
+                    fig.add_trace(go.Bar(
+                        x=df_plot.index, y=df_plot['Volume'], 
+                        marker_color=colors, name="成交量"
+                    ), row=2, col=1)
+
+                    fig.update_layout(
+                        xaxis_rangeslider_visible=False,
+                        xaxis2_rangeslider_visible=False,
+                        margin=dict(l=10, r=10, t=30, b=10),
+                        height=400, # 高度稍微縮減配合旁邊按鈕
+                        showlegend=False
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+                # ==========================================
+                # 右半邊：籌碼查哨站 (快捷按鈕區)
+                # ==========================================
+                with col_table:
+                    st.markdown("#### 🕵️‍♂️ 籌碼查哨站")
+                    st.caption("點擊直接查看主力動向")
+
+                    # 設定各大免費籌碼網站的專屬網址
+                    wantgoo_url = f"https://www.wantgoo.com/stock/{clean_id}/institutional-investors/trend"
+                    goodinfo_url = f"https://goodinfo.tw/tw/ShowBuySaleChart.asp?STOCK_ID={clean_id}"
+                    yahoo_url = f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-investors"
+
+                    # 建立三個大按鈕，點擊直接開新分頁
+                    st.link_button("🟢 玩股網 (看法人連買)", wantgoo_url, use_container_width=True)
+                    st.link_button("🔵 Goodinfo (看三大法人)", goodinfo_url, use_container_width=True)
+                    st.link_button("🟣 Yahoo (看主力大戶)", yahoo_url, use_container_width=True)
+                    
+                    st.info("💡 **實戰提示**：\n用左邊雷達確認【型態與量能】後，點擊上方按鈕確認籌碼！")
+
                 st.divider()
