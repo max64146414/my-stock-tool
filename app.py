@@ -417,9 +417,8 @@ if run_btn:
                     yahoo_url = f"https://tw.stock.yahoo.com/quote/{clean_id}/institutional-investors"
 
                     # 建立三個大按鈕，點擊直接開新分頁
-                    st.link_button("🟢 玩股網 (看法人連買)", wantgoo_url, use_container_width=True)
+                    st.link_button("🟢 玩股網 (籌碼集中度)", wantgoo_url, use_container_width=True)
                     st.link_button("🔵 Goodinfo (看三大法人)", goodinfo_url, use_container_width=True)
-                    st.link_button("🟣 Yahoo (看主力大戶)", yahoo_url, use_container_width=True)
                     
                     st.info("💡 **實戰提示**：\n用左邊雷達確認【型態與量能】後，點擊上方按鈕確認籌碼！")
 
