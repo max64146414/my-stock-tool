@@ -6,33 +6,6 @@ import plotly.graph_objects as go
 import time
 import json
 import datetime
-import requests 
-
-# ==========================================
-# 📊 新增：FinMind 抓取法人籌碼工具 (防呆版)
-# ==========================================
-@st.cache_data(ttl=3600)
-def get_institutional_data(stock_id, days=60):
-    try:
-        from FinMind.data import DataLoader
-        import datetime
-        dl = DataLoader()
-        
-        start_dt = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
-        df_inst = dl.taiwan_stock_institutional_investors_buy_sell(stock_id=stock_id, start_date=start_dt)
-        
-        if df_inst.empty:
-            return None # 抓不到就回傳 None
-            
-        df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
-        df_net = df_inst.groupby('date')['net_buy'].sum().reset_index()
-        df_net['date'] = pd.to_datetime(df_net['date']).dt.tz_localize(None).dt.normalize() 
-        df_net.set_index('date', inplace=True)
-        
-        return df_net
-    except Exception as e:
-        print(f"籌碼抓取失敗: {e}")
-        return None
 
 # --- 0. 簡易密碼鎖函數定義 ---
 def check_password():
@@ -68,12 +41,10 @@ def check_password():
         return False
     return True
 
-# 🌟 這兩行非常重要！如果沒有過密碼鎖，就停止往下執行畫網頁
 if not check_password():
     st.stop()
 
 # --- 1. 配置 ---
-# (下面繼續接你原本的 st.set_page_config... 等等)
 st.set_page_config(page_title="台股量價全視角雷達", layout="wide")
 st.title("🏹 台股量價監測：回檔 vs 糾纏突破")
 
@@ -457,36 +428,13 @@ if run_btn:
                 col_chart, col_table = st.columns([7, 3])
 
                 # ==========================================
-                # 左半邊：K線圖 + 成交量 + 法人籌碼曲線
+                # 左半邊：K線圖區塊
                 # ==========================================
                 with col_chart:
-                    df_plot = hit['df'].copy()
-                    
-                    # 🌟 抓蟲關鍵：把 Yahoo 財經的日期「去時區化」，才能跟 FinMind 完美接軌！
-                    df_plot.index = pd.to_datetime(df_plot.index).tz_localize(None).normalize()
-                    
-                    # 🌟 呼叫籌碼函數，並將籌碼資料與 K 線資料對齊
-                    df_inst = get_institutional_data(clean_id)
-                    if not df_inst.empty:
-                        # 確保 FinMind 的日期也沒有時區
-                        df_inst.index = pd.to_datetime(df_inst.index).tz_localize(None).normalize()
-                        
-                        # 把籌碼併入 K 線的 DataFrame
-                        df_plot = df_plot.join(df_inst, how='left')
-                        df_plot['net_buy'] = df_plot['net_buy'].fillna(0)
-                        
-                        # 計算 20 日法人累計買賣超 (除以 1000 換算成千張，視覺上比較乾淨)
-                        df_plot['Inst_20d_Sum'] = (df_plot['net_buy'] / 1000).rolling(window=20, min_periods=1).sum()
-                    else:
-                        df_plot['Inst_20d_Sum'] = 0
+                    df_plot = hit['df']
+                    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, 
+                                        vertical_spacing=0.03, row_heights=[0.8, 0.2])
 
-                    # 🌟 將圖表切成 3 列 (K線 60%, 成交量 20%, 籌碼線 20%)
-                    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
-                                        vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
-                    
-                    # ... (下面畫 add_trace 的代碼完全不用動，維持原樣) ...
-
-                    # --- 第一層：K線與均線 ---
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Upper'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), name="上軌", hoverinfo='none'), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Lower'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(150, 150, 150, 0.1)', name="下軌", hoverinfo='none'), row=1, col=1)
 
@@ -498,32 +446,21 @@ if run_btn:
                         x=df_plot.index, open=df_plot['Open'], 
                         high=df_plot['High'], low=df_plot['Low'], 
                         close=df_plot['Close'], name="K棒",
-                        increasing_line_color='#EF5350', 
-                        decreasing_line_color='#26A69A'  
+                        increasing_line_color='#EF5350', # 漲：台股專屬紅色
+                        decreasing_line_color='#26A69A'  # 跌：台股專屬綠色
                     ), row=1, col=1)
 
-                    # --- 第二層：成交量 ---
                     colors = ['#EF5350' if c >= o else '#26A69A' for c, o in zip(df_plot['Close'], df_plot['Open'])]
                     fig.add_trace(go.Bar(
                         x=df_plot.index, y=df_plot['Volume'], 
                         marker_color=colors, name="成交量"
                     ), row=2, col=1)
 
-                    # --- 第三層：🌟 20 日法人籌碼累計曲線 ---
-                    # 如果 20 日累計大於 0 顯示紅色區塊，小於 0 顯示綠色區塊
-                    fig.add_trace(go.Scatter(
-                        x=df_plot.index, y=df_plot['Inst_20d_Sum'], 
-                        line=dict(color='#9C27B0', width=2), 
-                        fill='tozeroy', fillcolor='rgba(156, 39, 176, 0.2)',
-                        name="20日法人累計"
-                    ), row=3, col=1)
-
                     fig.update_layout(
                         xaxis_rangeslider_visible=False,
                         xaxis2_rangeslider_visible=False,
-                        xaxis3_rangeslider_visible=False,
                         margin=dict(l=10, r=10, t=30, b=10),
-                        height=550, # 稍微拉高一點容納三層圖表
+                        height=400, # 高度稍微縮減配合旁邊按鈕
                         showlegend=False
                     )
                     st.plotly_chart(fig, use_container_width=True)
