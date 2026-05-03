@@ -6,6 +6,33 @@ import plotly.graph_objects as go
 import time
 import json
 import datetime
+import requests 
+
+# ==========================================
+# 📊 新增：FinMind 抓取法人籌碼工具 (防呆版)
+# ==========================================
+@st.cache_data(ttl=3600)
+def get_institutional_data(stock_id, days=60):
+    try:
+        from FinMind.data import DataLoader
+        import datetime
+        dl = DataLoader()
+        
+        start_dt = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
+        df_inst = dl.taiwan_stock_institutional_investors_buy_sell(stock_id=stock_id, start_date=start_dt)
+        
+        if df_inst.empty:
+            return None # 抓不到就回傳 None
+            
+        df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
+        df_net = df_inst.groupby('date')['net_buy'].sum().reset_index()
+        df_net['date'] = pd.to_datetime(df_net['date']).dt.tz_localize(None).dt.normalize() 
+        df_net.set_index('date', inplace=True)
+        
+        return df_net
+    except Exception as e:
+        print(f"籌碼抓取失敗: {e}")
+        return None
 
 # --- 0. 簡易密碼鎖函數定義 ---
 def check_password():
