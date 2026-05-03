@@ -251,13 +251,13 @@ if run_btn:
         if res: hits.append(res)
         bar.progress((i + 1) / len(full_list))
     
+    # ==========================================
+    # 🌟 修正區域：如果有抓到股票，就畫圖；如果沒有，就顯示空手提示
+    # ==========================================
     if hits:
         if mode == "均線回檔 (趨勢追蹤)": hits = sorted(hits, key=lambda x: abs(x.get('d20', 100)))
         elif mode == "均線糾纏 (底部突破)": hits = sorted(hits, key=lambda x: x.get('spread', 100))
         else: hits = sorted(hits, key=lambda x: x.get('vol_diff', 0), reverse=True) 
-        else:
-        st.divider()
-        st.warning(f"📭 **掃描完畢！** 在這個產業中，今天沒有股票符合【{mode}】的嚴格條件。\n\n💡 實戰建議：這代表目前沒有標準的進場訊號，請保持空手耐心等待，或是到左側把「帶量門檻」調低、「箱體振幅」調寬再試一次！")
 
         st.divider()
         st.success(f"🎯 掃描完成！共抓出 {len(hits)} 檔符合條件的標的。")
@@ -375,3 +375,10 @@ if run_btn:
                     send_discord_alert(hit, stock_name)
                 except:
                     pass
+                    
+    # ==========================================
+    # 🌟 這裡就是正確對齊的「查無股票」提示區塊
+    # ==========================================
+    else:
+        st.divider()
+        st.warning(f"📭 **掃描完畢！** 在這個產業中，今天沒有股票符合【{mode}】的嚴格條件。\n\n💡 實戰建議：這代表目前沒有標準的進場訊號，請保持空手耐心等待，或是到左側把「帶量門檻」調低、「箱體振幅」調寬再試一次！")
