@@ -10,29 +10,7 @@ import datetime
 import requests 
 
 # ==========================================
-# 🤖 模組 1：Discord 專屬廣播機器人
-# ==========================================
-def send_discord_alert(hit_data, stock_name):
-    webhook_url = "https://discord.com/api/webhooks/1500128114611585155/4pViNF-wQOSaN3CGbyp4WpVPGqeKE483TsQTdZZ6VD_6VytaZoh-nlVis4brRSZE1chE"
-    clean_id = hit_data['id'].replace('.TW', '')
-    price = hit_data['price']
-    status = hit_data['status']
-    
-    msg = f"🚨 **阿峰雷達觸發：{status}** 🚨\n"
-    msg += f"**股票**：[{clean_id} {stock_name}](https://tw.tradingview.com/symbols/TWSE-{clean_id}/)\n"
-    msg += f"**現價**：`{price:.1f}`\n"
-    if 'pb' in hit_data and hit_data['pb']:
-        msg += f"**淨值比 (PB)**：`{hit_data['pb']:.2f}`\n"
-    if 'stop_price' in hit_data:
-        msg += f"🛑 **建議停損**：`{hit_data['stop_price']:.1f}`\n"
-
-    try:
-        requests.post(webhook_url, json={"content": msg}, timeout=3)
-    except Exception as e:
-        print(f"Discord 推播失敗: {e}")
-
-# ==========================================
-# 🔒 模組 2：簡易密碼鎖
+# 🔒 模組 1：簡易密碼鎖
 # ==========================================
 def check_password():
     if "password_correct" not in st.session_state:
