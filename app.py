@@ -8,34 +8,31 @@ import json
 import datetime
 
 # ==========================================
-# 📊 新增：FinMind 抓取法人籌碼工具
+# 📊 新增：FinMind 抓取法人籌碼工具 (防呆版)
 # ==========================================
-@st.cache_data(ttl=3600) # 快取一小時，避免重複抓取被鎖 IP
+@st.cache_data(ttl=3600)
 def get_institutional_data(stock_id, days=60):
     try:
         from FinMind.data import DataLoader
         import datetime
         dl = DataLoader()
         
-        # 抓取過去 60 天的資料來算 20 日均線
         start_dt = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
         df_inst = dl.taiwan_stock_institutional_investors_buy_sell(stock_id=stock_id, start_date=start_dt)
         
         if df_inst.empty:
-            return pd.DataFrame()
+            print(f"⚠️ [警告] {stock_id} 抓不到籌碼，可能觸發 API 限制。")
+            return None # 🌟 抓不到就回傳 None，不要回傳空的 DataFrame
             
-        # 計算每天的「三大法人淨買賣超」(買進 - 賣出)
         df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
-        
-        # 依照日期加總 (把外資、投信、自營商加總成一個數字)
         df_net = df_inst.groupby('date')['net_buy'].sum().reset_index()
-        df_net['date'] = pd.to_datetime(df_net['date'])
+        df_net['date'] = pd.to_datetime(df_net['date']).dt.tz_localize(None).dt.normalize() # 🌟 強制洗淨日期
         df_net.set_index('date', inplace=True)
         
         return df_net
     except Exception as e:
         print(f"籌碼抓取失敗: {e}")
-        return pd.DataFrame()
+        return None
 
 # --- 0. 簡易密碼鎖函數定義 ---
 def check_password():
