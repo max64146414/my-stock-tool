@@ -140,84 +140,132 @@ def get_full_industry_list(category):
         # 報錯時，回傳備援清單 (也就是你看到的 8 檔)
         return backup_map.get(category, ["2330.TW"])
 
-# --- 5. 核心分析函數 (已整合風控與 PE 邏輯) ---
+# --- 5. 核心分析函數 (🌟 整合週線保護與歷史回測) ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
     try:
-        df = yf.download(symbol, period="200d", progress=False, threads=False)
-        if df.empty or len(df) < 65: return None
+        # 🌟 為了算週線跟回測，我們把抓取時間拉長到 "2y" (兩年)
+        df = yf.download(symbol, period="2y", progress=False, threads=False)
+        if df.empty or len(df) < 100: return None
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         df.columns = [str(c).capitalize() for c in df.columns]
 
+        # 🌟 新增：長線保護短線 (計算週線 20MA 趨勢)
+        # 用 Pandas 把日線資料轉換成週線 (每週五收盤)
+        df_weekly = df.resample('W-FRI').agg({'Close': 'last'}).dropna()
+        if len(df_weekly) >= 20:
+            w_ma20 = df_weekly['Close'].rolling(20).mean()
+            w_ma20_curr = w_ma20.iloc[-1]
+            w_ma20_prev = w_ma20.iloc[-2]
+            is_weekly_up = w_ma20_curr >= w_ma20_prev  # 週線 20MA 是否向上
+        else:
+            is_weekly_up = True # 資料不足則預設放行
+
         close = df['Close'].astype(float).squeeze().dropna()
         volume = df['Volume'].astype(float).squeeze().dropna()
-        ma10, ma20, ma60 = close.rolling(10).mean(), close.rolling(20).mean(), close.rolling(60).mean()
-
-        # --- 新增：計算布林通道並存入 DataFrame 以供畫圖使用 ---
+        
+        # 為了回測，我們把所有的均線算出來
+        ma10_all = close.rolling(10).mean()
+        ma20_all = close.rolling(20).mean()
+        ma60_all = close.rolling(60).mean()
+        
+        ma10, ma20, ma60 = ma10_all, ma20_all, ma60_all
         std20 = close.rolling(20).std()
-        df['MA10'] = ma10
-        df['MA20'] = ma20
-        df['MA60'] = ma60
+        
+        df['MA10'], df['MA20'], df['MA60'] = ma10, ma20, ma60
         df['BB_Upper'] = ma20 + 2 * std20
         df['BB_Lower'] = ma20 - 2 * std20
+        
         today_vol = volume.iloc[-1]
         avg_vol_5d = volume.iloc[-6:-1].mean()
         vol_diff_pct = ((today_vol - avg_vol_5d) / avg_vol_5d) * 100 if avg_vol_5d > 0 else 0
+        
         curr_p = float(close.iloc[-1])
         m10, m20, m60_curr = float(ma10.iloc[-1]), float(ma20.iloc[-1]), float(ma60.iloc[-1])
         m60_prev = float(ma60.iloc[-2])
 
         hit_data = None
+        
         # --- 模式 A: 均線回檔 ---
         if mode_choice == "均線回檔 (趨勢追蹤)":
-            if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200:
+            # 🌟 加上 is_weekly_up (週線向上) 條件
+            if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200 and is_weekly_up:
                 dist_10, dist_20 = (curr_p - m10) / m10, (curr_p - m20) / m20
                 if abs(dist_10) < param1 or abs(dist_20) < param1:
                     pro_metrics = check_professional_metrics(df.tail(40))
                     hit_data = {
                         "id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, 
-                        "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(40), 
-                        "status": "🛡️ 回檔支撐", "pro": pro_metrics
+                        "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(60), # 多抓一點給圖表
+                        "status": "🛡️ 回檔支撐", "pro": pro_metrics, "w_trend": True
                     }
 
         # --- 模式 B: 均線糾纏 ---
         elif mode_choice == "均線糾纏 (底部突破)":
             ma_list = [m10, m20, m60_curr]
             spread = (max(ma_list) - min(ma_list)) / min(ma_list)
-            if spread < param1 and m60_curr >= m60_prev * 0.998 and curr_p > max(ma_list):
+            # 🌟 加上 is_weekly_up (週線向上) 條件
+            if spread < param1 and m60_curr >= m60_prev * 0.998 and curr_p > max(ma_list) and is_weekly_up:
                 is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
                 status_text = "🚀 帶量突破" if is_vol_boost else "💤 糾纏待變"
                 hit_data = {
                     "id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, 
                     "d10": ((curr_p-m10)/m10)*100, "d20": ((curr_p-m20)/m20)*100, 
-                    "df": df.tail(40), "status": status_text, "spread": spread*100
+                    "df": df.tail(60), "status": status_text, "spread": spread*100, "w_trend": True
                 }
 
-        # --- 這裡就是你說的「尾端」：當股票符合條件，補上 PE 與 風控計算 ---
-        # --- 這裡就是你說的「尾端」：當股票符合條件，補上 PE 與 風控計算 ---
+        # ==========================================
+        # 🌟 新增：勝率回測引擎 (只針對有跳訊號的股票進行算力集中回測)
+        # 邏輯：過去兩年內，只要發生類似訊號，20個交易日內有沒有賺到 10%？
+        # ==========================================
         if hit_data:
-            # 1. 抓取 PE 與 PB
+            wins, total_signals = 0, 0
+            try:
+                # 建立歷史條件陣列
+                if mode_choice == "均線糾纏 (底部突破)":
+                    max_hist = pd.concat([ma10_all, ma20_all, ma60_all], axis=1).max(axis=1)
+                    min_hist = pd.concat([ma10_all, ma20_all, ma60_all], axis=1).min(axis=1)
+                    spread_hist = (max_hist - min_hist) / min_hist
+                    # 找出歷史上「價格剛突破糾纏區」的日子
+                    hist_signals = (spread_hist < param1) & (close > max_hist) & (close.shift(1) <= max_hist.shift(1))
+                else:
+                    # 找出歷史上「回測 20MA」的日子
+                    hist_signals = (close > ma60_all) & (abs((close - ma20_all)/ma20_all) < param1) & (close.shift(1) > ma20_all * 1.05)
+                
+                signal_dates = df[hist_signals].index
+                
+                # 模擬進場：往後看 20 天，若最高價大於進場價 10% 即算贏
+                for d in signal_dates[:-1]: # 排除掉今天
+                    idx = df.index.get_loc(d)
+                    if idx + 20 < len(df): 
+                        entry_p = float(df['Close'].iloc[idx])
+                        max_future = df['Close'].iloc[idx+1 : idx+21].max()
+                        if max_future > entry_p * 1.10: 
+                            wins += 1
+                        total_signals += 1
+                
+                win_rate = (wins / total_signals * 100) if total_signals > 0 else 0
+                hit_data['backtest'] = {"wins": wins, "total": total_signals, "rate": win_rate}
+            except Exception as e:
+                hit_data['backtest'] = {"wins": 0, "total": 0, "rate": 0}
+            
+            # --- 原本的 PE/PB 與 風控計算 ---
             try:
                 t_obj = yf.Ticker(symbol)
-                info = t_obj.info # 先把 info 存起來，避免重複呼叫拖慢速度
+                info = t_obj.info 
                 hit_data['pe'] = info.get('trailingPE') or info.get('forwardPE')
-                hit_data['pb'] = info.get('priceToBook') # 新增這行抓 PB
+                hit_data['pb'] = info.get('priceToBook') 
             except:
-                hit_data['pe'] = None
-                hit_data['pb'] = None # 新增這行
+                hit_data['pe'], hit_data['pb'] = None, None
             
-            # 2. 計算風控價位 (這就是新增的地方)
-            struct_stop = df['Low'].iloc[-5:].min()  # 近5日低點
+            struct_stop = df['Low'].iloc[-5:].min()
             hit_data["stop_price"] = struct_stop
-            hit_data["profit_stop"] = m20            # 移動停利參考 20MA
+            hit_data["profit_stop"] = m20            
             hit_data["risk_pct"] = ((curr_p - struct_stop) / curr_p) * 100
             
             return hit_data
             
         return None
     except Exception as e:
-        print(f"分析出錯: {e}")
         return None
-
 # --- 6. 執行顯示 (確保量能與所有指標完整顯示) ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
@@ -289,8 +337,21 @@ if run_btn:
                     pb_tag = "⚪ 暫無數據"
 
                 # --- [B] 標題與核心指標 ---
-                st.markdown(f"### [{clean_id} {stock_name} ｜ {hit['status']}]({tv_url})")
+                # 🌟 新增 1：判斷週線趨勢標籤
+                w_tag = "📈 週線多頭" if hit.get('w_trend') else "⚠️ 週線偏空"
                 
+                # 🌟 把週線標籤加進大標題裡面
+                st.markdown(f"### [{clean_id} {stock_name} ｜ {hit['status']} ｜ {w_tag}]({tv_url})")
+                
+                # 🌟 新增 2：歷史回測戰績看板 (夾在標題跟價格中間)
+                if 'backtest' in hit:
+                    bt = hit['backtest']
+                    if bt['total'] > 0:
+                        st.warning(f"🔥 **大數據歷史回測 (近2年)**：本策略觸發 `{bt['total']}` 次，波段達標(+10%)共 `{bt['wins']}` 次 👉 **歷史勝率 {bt['rate']:.1f}%**")
+                    else:
+                        st.info("ℹ️ 近兩年首次出現此訊號，無歷史回測數據。")
+
+                # (下面接著你原本的切欄位，完全不用動)
                 c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
                 c1.metric("現價", f"{hit['price']:.1f}")
                 
