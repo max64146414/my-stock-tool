@@ -463,20 +463,29 @@ if run_btn:
                 with col_chart:
                     df_plot = hit['df'].copy()
                     
+                    # 🌟 抓蟲關鍵：把 Yahoo 財經的日期「去時區化」，才能跟 FinMind 完美接軌！
+                    df_plot.index = pd.to_datetime(df_plot.index).tz_localize(None).normalize()
+                    
                     # 🌟 呼叫籌碼函數，並將籌碼資料與 K 線資料對齊
                     df_inst = get_institutional_data(clean_id)
                     if not df_inst.empty:
+                        # 確保 FinMind 的日期也沒有時區
+                        df_inst.index = pd.to_datetime(df_inst.index).tz_localize(None).normalize()
+                        
                         # 把籌碼併入 K 線的 DataFrame
                         df_plot = df_plot.join(df_inst, how='left')
                         df_plot['net_buy'] = df_plot['net_buy'].fillna(0)
-                        # 計算 20 日法人累計買賣超 (這就是你要的 20日籌碼趨勢)
-                        df_plot['Inst_20d_Sum'] = df_plot['net_buy'].rolling(window=20, min_periods=1).sum()
+                        
+                        # 計算 20 日法人累計買賣超 (除以 1000 換算成千張，視覺上比較乾淨)
+                        df_plot['Inst_20d_Sum'] = (df_plot['net_buy'] / 1000).rolling(window=20, min_periods=1).sum()
                     else:
                         df_plot['Inst_20d_Sum'] = 0
 
                     # 🌟 將圖表切成 3 列 (K線 60%, 成交量 20%, 籌碼線 20%)
                     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, 
                                         vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
+                    
+                    # ... (下面畫 add_trace 的代碼完全不用動，維持原樣) ...
 
                     # --- 第一層：K線與均線 ---
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Upper'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), name="上軌", hoverinfo='none'), row=1, col=1)
