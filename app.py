@@ -10,27 +10,26 @@ import datetime
 import requests 
 
 # ==========================================
-# 📊 模組 1：FinMind 抓取法人籌碼工具 (防呆與時區洗淨版)
+# 🤖 模組 1：Discord 專屬廣播機器人
 # ==========================================
-@st.cache_data(ttl=3600)
-def get_institutional_data(stock_id, days=60):
+def send_discord_alert(hit_data, stock_name):
+    webhook_url = "https://discord.com/api/webhooks/1500128114611585155/4pViNF-wQOSaN3CGbyp4WpVPGqeKE483TsQTdZZ6VD_6VytaZoh-nlVis4brRSZE1chE"
+    clean_id = hit_data['id'].replace('.TW', '')
+    price = hit_data['price']
+    status = hit_data['status']
+    
+    msg = f"🚨 **阿峰雷達觸發：{status}** 🚨\n"
+    msg += f"**股票**：[{clean_id} {stock_name}](https://tw.tradingview.com/symbols/TWSE-{clean_id}/)\n"
+    msg += f"**現價**：`{price:.1f}`\n"
+    if 'pb' in hit_data and hit_data['pb']:
+        msg += f"**淨值比 (PB)**：`{hit_data['pb']:.2f}`\n"
+    if 'stop_price' in hit_data:
+        msg += f"🛑 **建議停損**：`{hit_data['stop_price']:.1f}`\n"
+
     try:
-        dl = DataLoader()
-        start_dt = (datetime.datetime.now() - datetime.timedelta(days=days)).strftime('%Y-%m-%d')
-        df_inst = dl.taiwan_stock_institutional_investors_buy_sell(stock_id=stock_id, start_date=start_dt)
-        
-        if df_inst.empty:
-            print(f"⚠️ [警告] {stock_id} 抓不到籌碼，可能觸發 API 限制。")
-            return None
-            
-        df_inst['net_buy'] = df_inst['buy'] - df_inst['sell']
-        df_net = df_inst.groupby('date')['net_buy'].sum().reset_index()
-        df_net['date'] = pd.to_datetime(df_net['date']).dt.tz_localize(None).dt.normalize()
-        df_net.set_index('date', inplace=True)
-        return df_net
+        requests.post(webhook_url, json={"content": msg}, timeout=3)
     except Exception as e:
-        print(f"籌碼抓取失敗: {e}")
-        return None
+        print(f"Discord 推播失敗: {e}")
 
 # ==========================================
 # 🔒 模組 2：簡易密碼鎖
@@ -113,7 +112,7 @@ def detect_patterns(df):
 
     return patterns
 
-# --- 3. 側邊欄 (新增箱型模式) ---
+# --- 3. 側邊欄 ---
 with st.sidebar:
     st.header("🔍 模式選擇")
     mode = st.radio("選擇監測模式", ["均線回檔 (趨勢追蹤)", "均線糾纏 (底部突破)", "箱型突破 (達華斯動能)"])
@@ -166,7 +165,7 @@ def get_full_industry_list(category):
     except:
         return backup_map.get(category, ["2330.TW"])
 
-# --- 5. 核心分析函數 (大腦完全體) ---
+# --- 5. 核心分析函數 ---
 def analyze_stock(symbol, mode_choice, param1, param2=None):
     try:
         df = yf.download(symbol, period="2y", progress=False, threads=False)
@@ -225,7 +224,6 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         if hit_data:
             hit_data['patterns'] = detect_patterns(df)
             
-            # 回測引擎
             wins, total_signals = 0, 0
             try:
                 if mode_choice == "均線糾纏 (底部突破)":
@@ -234,7 +232,7 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
                 elif mode_choice == "均線回檔 (趨勢追蹤)":
                     hist_signals = (close > ma60_all) & (abs((close - ma20_all)/ma20_all) < param1) & (close.shift(1) > ma20_all * 1.05)
                 else:
-                    hist_signals = pd.Series([False]*len(df), index=df.index) # 箱型回測較複雜先略過
+                    hist_signals = pd.Series([False]*len(df), index=df.index) 
                 
                 for d in df[hist_signals].index[:-1]: 
                     idx = df.index.get_loc(d)
@@ -245,7 +243,6 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
             except:
                 hit_data['backtest'] = {"wins": 0, "total": 0, "rate": 0}
             
-            # 評價與風控
             try:
                 info = yf.Ticker(symbol).info 
                 hit_data['pe'] = info.get('trailingPE') or info.get('forwardPE')
@@ -279,7 +276,7 @@ if run_btn:
     if hits:
         if mode == "均線回檔 (趨勢追蹤)": hits = sorted(hits, key=lambda x: abs(x.get('d20', 100)))
         elif mode == "均線糾纏 (底部突破)": hits = sorted(hits, key=lambda x: x.get('spread', 100))
-        else: hits = sorted(hits, key=lambda x: x.get('vol_diff', 0), reverse=True) # 箱型用量能排序
+        else: hits = sorted(hits, key=lambda x: x.get('vol_diff', 0), reverse=True) 
 
         st.divider()
         st.success(f"🎯 掃描完成！共抓出 {len(hits)} 檔符合條件的標的。")
@@ -334,22 +331,12 @@ if run_btn:
 
                 col_chart, col_table = st.columns([7, 3])
 
-                # ====== 左半邊畫圖 ======
+                # ====== 左半邊畫圖 (拔除法人籌碼，恢復雙層結構) ======
                 with col_chart:
                     df_plot = hit['df'].copy()
                     df_plot.index = pd.to_datetime(df_plot.index).tz_localize(None).normalize()
-                    
-                    df_inst = get_institutional_data(clean_id)
-                    if df_inst is None or df_inst.empty:
-                        st.error(f"⚠️ 無法載入 {clean_id} 法人籌碼！(API 限制)")
-                        df_plot['Inst_20d_Sum'] = 0
-                    else:
-                        st.caption(f"✅ 成功載入 {clean_id} 法人籌碼")
-                        df_plot = df_plot.join(df_inst[['net_buy']], how='left')
-                        df_plot['net_buy'] = df_plot['net_buy'].fillna(0)
-                        df_plot['Inst_20d_Sum'] = (df_plot['net_buy'] / 1000).rolling(window=20, min_periods=1).sum()
 
-                    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.6, 0.2, 0.2])
+                    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.03, row_heights=[0.8, 0.2])
 
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Upper'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), name="上軌", hoverinfo='none'), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['BB_Lower'], line=dict(color='rgba(150, 150, 150, 0.5)', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(150, 150, 150, 0.1)', name="下軌", hoverinfo='none'), row=1, col=1)
@@ -368,9 +355,8 @@ if run_btn:
 
                     colors = ['#EF5350' if c >= o else '#26A69A' for c, o in zip(df_plot['Close'], df_plot['Open'])]
                     fig.add_trace(go.Bar(x=df_plot.index, y=df_plot['Volume'], marker_color=colors, name="成交量"), row=2, col=1)
-                    fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['Inst_20d_Sum'], line=dict(color='#9C27B0', width=2), fill='tozeroy', fillcolor='rgba(156, 39, 176, 0.2)', name="20日法人累計"), row=3, col=1)
 
-                    fig.update_layout(xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, xaxis3_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10), height=550, showlegend=False)
+                    fig.update_layout(xaxis_rangeslider_visible=False, xaxis2_rangeslider_visible=False, margin=dict(l=10, r=10, t=30, b=10), height=450, showlegend=False)
                     st.plotly_chart(fig, use_container_width=True)
 
                 # ====== 右半邊按鈕與 AI 提示 ======
