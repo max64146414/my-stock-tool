@@ -465,8 +465,8 @@ if run_btn:
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-                # ==========================================
-                # 右半邊：籌碼查哨站 (快捷按鈕區)
+# ==========================================
+                # 右半邊：籌碼查哨站 (快捷按鈕區) + AI 診斷
                 # ==========================================
                 with col_table:
                     st.markdown("#### 🕵️‍♂️ 籌碼查哨站")
@@ -481,6 +481,29 @@ if run_btn:
                     st.link_button("🟢 玩股網 (籌碼集中度)", wantgoo_url, use_container_width=True)
                     st.link_button("🔵 Goodinfo (看三大法人)", goodinfo_url, use_container_width=True)
                     
-                    st.info("💡 **實戰提示**：\n用左邊雷達確認【型態與量能】後，點擊上方按鈕確認籌碼！")
+                    st.divider()
+                    
+                    # 🌟 新增：呼叫 AI 深度診斷的「一鍵複製」區塊
+                    st.markdown("#### 🤖 AI 深度診斷指令")
+                    st.caption("💡 點擊下方框框右上角的「複製」，直接貼給我分析！")
+                    
+                    # 準備回測字串給 AI 參考
+                    if 'backtest' in hit and hit['backtest']['total'] > 0:
+                        bt_str = f"近2年觸發 {hit['backtest']['total']} 次，勝率 {hit['backtest']['rate']:.1f}%"
+                    else:
+                        bt_str = "首次觸發或無回測資料"
+
+                    # 組裝給 AI (也就是我) 的專屬完美咒語
+                    ai_prompt = (
+                        f"阿峰雷達呼叫 🐝：請幫我深度分析【{clean_id} {stock_name}】。\n\n"
+                        f"📊 目前雷達偵測數據：\n"
+                        f"- 技術狀態：{hit['status']} ({w_tag})\n"
+                        f"- 價格量能：現價 {hit['price']:.1f}，量能變化 {vol_val:.1f}%\n"
+                        f"- 歷史勝率：{bt_str}\n\n"
+                        f"👉 請結合目前的台股大環境，幫我評估這檔股票的【進場優勢】、【籌碼面可能隱患】，並給我具體的【實戰試單策略】。"
+                    )
+                    
+                    # 使用 st.code，它會自動產生「一鍵複製」的按鈕
+                    st.code(ai_prompt, language="text")
 
                 st.divider()
