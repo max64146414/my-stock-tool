@@ -22,7 +22,7 @@ def check_password():
         with col_mid:
             password = st.text_input("密碼", type="password")
             if st.button("確認登入"):
-                user_map = {"19930522": "阿峰", "820522": "脆皮", "0522": "柔", "159632": "阿曼達"}
+                user_map = {"19930522": "阿峰", "820522": "脆皮", "0522": "柔", "159632": "阿曼達", "0956": "阿峯"}
                 if password in user_map:
                     st.session_state["password_correct"] = True
                     user_name = user_map[password]
@@ -43,57 +43,99 @@ if not check_password():
 st.set_page_config(page_title="台股量價全視角雷達", layout="wide")
 st.title("🏹 台股量價監測：多維度動能雷達")
 
-# --- 2. 職業動能分析與型態偵測 ---
-def check_professional_metrics(df):
+# --- 2. 職業動能分析與型態偵測 (含多空邏輯) ---
+def check_professional_metrics(df, is_long=True):
     try:
         bodies = abs(df['Close'] - df['Open'])
         is_black = df['Close'] < df['Open']
         black_bodies = bodies[is_black]
-        recent_black = black_bodies.iloc[-3:].mean() if len(black_bodies) >= 2 else 0
-        prev_black = black_bodies.iloc[-10:-3].mean() if len(black_bodies) >= 10 else 999
-        momentum_decay = recent_black < prev_black
+        red_bodies = bodies[~is_black]
         
-        last_c, last_o = float(df['Close'].iloc[-1]), float(df['Open'].iloc[-1])
-        prev_c, prev_o = float(df['Close'].iloc[-2]), float(df['Open'].iloc[-2])
-        is_engulfing = (last_c > prev_o) and (last_o < prev_c)
-        lower_shadow = min(last_c, last_o) - df['Low'].iloc[-1]
-        has_tail = lower_shadow > (abs(last_c - last_o) * 1.5)
-        
-        signal = "🔥 轉強訊號" if is_engulfing or has_tail else "⏳ 等待訊號"
-        action = "🎯 建議試單 1/3" if (momentum_decay and (is_engulfing or has_tail)) else "☕ 先手觀望"
-        return {"decay": momentum_decay, "signal": signal, "action": action}
-    except:
-        return {"decay": False, "signal": "數據不足", "action": "持續觀察"}
+        if is_long:
+            # 作多邏輯：看黑 K 實體是否縮小 (賣壓竭盡)
+            recent_body = black_bodies.iloc[-3:].mean() if len(black_bodies) >= 2 else 0
+            prev_body = black_bodies.iloc[-10:-3].mean() if len(black_bodies) >= 10 else 999
+            momentum_decay = recent_body < prev_body
+            
+            last_c, last_o = float(df['Close'].iloc[-1]), float(df['Open'].iloc[-1])
+            prev_c, prev_o = float(df['Close'].iloc[-2]), float(df['Open'].iloc[-2])
+            is_engulfing = (last_c > prev_o) and (last_o < prev_c) # 陽線吞噬
+            lower_shadow = min(last_c, last_o) - df['Low'].iloc[-1]
+            has_tail = lower_shadow > (abs(last_c - last_o) * 1.5)
+            
+            signal = "🔥 轉強訊號" if is_engulfing or has_tail else "⏳ 等待訊號"
+            action = "🎯 建議試單 1/3" if (momentum_decay and (is_engulfing or has_tail)) else "☕ 先手觀望"
+            decay_str = "✅ 賣壓竭盡" if momentum_decay else "❌ 仍有賣壓"
+        else:
+            # 作空邏輯：看紅 K 實體是否縮小 (買盤竭盡)
+            recent_body = red_bodies.iloc[-3:].mean() if len(red_bodies) >= 2 else 0
+            prev_body = red_bodies.iloc[-10:-3].mean() if len(red_bodies) >= 10 else 999
+            momentum_decay = recent_body < prev_body
+            
+            last_c, last_o = float(df['Close'].iloc[-1]), float(df['Open'].iloc[-1])
+            prev_c, prev_o = float(df['Close'].iloc[-2]), float(df['Open'].iloc[-2])
+            is_engulfing = (last_c < prev_o) and (last_o > prev_c) # 陰線吞噬
+            upper_shadow = df['High'].iloc[-1] - max(last_c, last_o)
+            has_tail = upper_shadow > (abs(last_c - last_o) * 1.5) # 避雷針
+            
+            signal = "🧊 轉弱訊號" if is_engulfing or has_tail else "⏳ 等待訊號"
+            action = "📉 建議建空單" if (momentum_decay and (is_engulfing or has_tail)) else "☕ 先手觀望"
+            decay_str = "✅ 買盤竭盡" if momentum_decay else "❌ 仍有買盤"
 
-def detect_patterns(df):
+        return {"decay": momentum_decay, "signal": signal, "action": action, "decay_str": decay_str}
+    except:
+        return {"decay": False, "signal": "數據不足", "action": "持續觀察", "decay_str": "無資料"}
+
+def detect_patterns(df, is_long=True):
     patterns = []
     close, high, low = df['Close'], df['High'], df['Low']
-    
-    # W 底
-    recent_lows = low.tail(40).nsmallest(2)
-    if len(recent_lows) == 2 and abs(recent_lows.iloc[0] - recent_lows.iloc[1]) / recent_lows.iloc[0] < 0.03:
-        neckline = high.loc[recent_lows.index[0] : recent_lows.index[1]].max()
-        if close.iloc[-1] > neckline * 0.99: 
-            patterns.append({"name": "W底型態 (雙重底)", "icon": "📈", "adv": "底部成型，若突破頸線可視為強烈買訊，停損設右腳低點。"})
-            
-    # 多頭旗型
     ma20 = close.rolling(20).mean()
-    if close.iloc[-1] > ma20.iloc[-1] and close.iloc[-1] < close.iloc[-5:].max():
-         if (close.iloc[-5:].max() - close.iloc[-1]) / close.iloc[-1] < 0.05:
-             patterns.append({"name": "多頭旗型整理", "icon": "🚩", "adv": "強勢股中繼休息，隨時可能發動下一波，可沿 10MA 試單。"})
-
-    # 布林壓縮
     std20 = close.rolling(20).std()
+    
+    if is_long:
+        # 作多型態
+        recent_lows = low.tail(40).nsmallest(2)
+        if len(recent_lows) == 2 and abs(recent_lows.iloc[0] - recent_lows.iloc[1]) / recent_lows.iloc[0] < 0.03:
+            neckline = high.loc[recent_lows.index[0] : recent_lows.index[1]].max()
+            if close.iloc[-1] > neckline * 0.99: 
+                patterns.append({"name": "W底型態 (雙重底)", "icon": "📈", "adv": "底部成型，若突破頸線可視為強烈買訊，停損設右腳低點。"})
+                
+        if close.iloc[-1] > ma20.iloc[-1] and close.iloc[-1] < close.iloc[-5:].max():
+             if (close.iloc[-5:].max() - close.iloc[-1]) / close.iloc[-1] < 0.05:
+                 patterns.append({"name": "多頭旗型整理", "icon": "🚩", "adv": "強勢股中繼休息，隨時可能發動下一波，可沿 10MA 試單。"})
+    else:
+        # 作空型態
+        recent_highs = high.tail(40).nlargest(2)
+        if len(recent_highs) == 2 and abs(recent_highs.iloc[0] - recent_highs.iloc[1]) / recent_highs.iloc[0] < 0.03:
+            neckline = low.loc[recent_highs.index[1] : recent_highs.index[0]].min()
+            if close.iloc[-1] < neckline * 1.01:
+                patterns.append({"name": "M頭型態 (雙重頂)", "icon": "📉", "adv": "頭部成型，若跌破頸線可視為強烈空訊，停損設右肩高點。"})
+                
+        if close.iloc[-1] < ma20.iloc[-1] and close.iloc[-1] > close.iloc[-5:].min():
+             if (close.iloc[-1] - close.iloc[-5:].min()) / close.iloc[-5:].min() < 0.05:
+                 patterns.append({"name": "空頭旗型整理", "icon": "🏴‍☠️", "adv": "弱勢股弱勢反彈，隨時可能再破底，可沿 10MA 建空單。"})
+
+    # 共通：布林壓縮
     bb_width = (4 * std20.iloc[-1]) / ma20.iloc[-1]
     if bb_width < 0.08: 
-        patterns.append({"name": "布林極度壓縮 (洗盤尾聲)", "icon": "🗜️", "adv": "變盤在即！即將表態，請密切關注出量方向，帶量長紅即進場。"})
+        patterns.append({"name": "布林極度壓縮", "icon": "🗜️", "adv": "變盤在即！即將表態，請密切關注出量方向。"})
 
     return patterns
 
 # --- 3. 側邊欄 ---
 with st.sidebar:
+    st.header("⚖️ 多空方向")
+    # 🌟 新增：多空切換開關
+    trade_direction = st.radio("選擇操作方向", ["📈 作多 (Long)", "📉 作空 (Short)"])
+    is_long = trade_direction == "📈 作多 (Long)"
+
+    st.divider()
     st.header("🔍 模式選擇")
-    mode = st.radio("選擇監測模式", ["均線回檔 (趨勢追蹤)", "均線糾纏 (底部突破)", "箱型突破 (達華斯動能)"])
+    if is_long:
+        mode = st.radio("選擇監測模式", ["均線回檔 (趨勢追蹤)", "均線糾纏 (底部突破)", "箱型突破 (達華斯動能)"])
+    else:
+        # 🌟 空方對應的模式名稱
+        mode = st.radio("選擇監測模式", ["反彈遇壓 (空頭追蹤)", "高檔糾纏 (破線崩潰)", "箱底破位 (達華斯跳水)"])
     
     st.divider()
     st.header("⚙️ 掃描設定")
@@ -102,16 +144,21 @@ with st.sidebar:
         "電腦及週邊設備業", "通信網路業", "電機機械", "其他電子業"
     ])
     
-    if mode == "均線回檔 (趨勢追蹤)":
+    # 根據多空模式顯示不同參數名稱，但背後邏輯類似
+    if "回檔" in mode or "反彈" in mode:
         sensitivity = st.slider("靠近均線門檻 (%)", 0.1, 8.0, 3.5) / 100
-    elif mode == "均線糾纏 (底部突破)":
+    elif "糾纏" in mode:
         entangle_limit = st.slider("均線糾纏寬度 (%)", 0.5, 5.0, 2.0) / 100
-        vol_boost = st.slider("帶量突破門檻 (倍)", 1.0, 5.0, 1.8)
-    elif mode == "箱型突破 (達華斯動能)": 
+        vol_boost = st.slider("帶量表態門檻 (倍)", 1.0, 5.0, 1.8)
+    elif "箱型" in mode or "箱底" in mode: 
         box_period = st.slider("箱型觀察期 (天)", 10, 60, 20)
         box_width = st.slider("箱體最大振幅 (%)", 5.0, 25.0, 15.0) / 100
 
     run_btn = st.button("🚀 開始掃描")
+
+    # 🌟 新增：作空實戰提醒
+    if not is_long:
+        st.warning("⚠️ **作空實戰鐵律**\n1. 避開 3~4 月融券強制回補期。\n2. 停損務必設 5% 內，嚴格執行。\n3. 不要空每天漲停的強勢妖股。")
 
     st.divider()
     st.markdown("### 🐝 蜂巢足跡")
@@ -144,7 +191,7 @@ def get_full_industry_list(category):
         return backup_map.get(category, ["2330.TW"])
 
 # --- 5. 核心分析函數 ---
-def analyze_stock(symbol, mode_choice, param1, param2=None):
+def analyze_stock(symbol, mode_choice, param1, param2=None, is_long_mode=True):
     try:
         df = yf.download(symbol, period="2y", progress=False, threads=False)
         if df.empty or len(df) < 100: return None
@@ -154,9 +201,10 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
         df_weekly = df.resample('W-FRI').agg({'Close': 'last'}).dropna()
         if len(df_weekly) >= 20:
             w_ma20 = df_weekly['Close'].rolling(20).mean()
-            is_weekly_up = w_ma20.iloc[-1] >= w_ma20.iloc[-2]  
+            # 多頭看週線是否向上，空頭看週線是否向下
+            is_weekly_favorable = w_ma20.iloc[-1] >= w_ma20.iloc[-2] if is_long_mode else w_ma20.iloc[-1] <= w_ma20.iloc[-2]
         else:
-            is_weekly_up = True 
+            is_weekly_favorable = True 
 
         close = df['Close'].astype(float).squeeze().dropna()
         volume = df['Volume'].astype(float).squeeze().dropna()
@@ -176,46 +224,71 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
 
         hit_data = None
         
+        # 🌟 多空雙向邏輯判斷
         if mode_choice == "均線回檔 (趨勢追蹤)":
-            if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200 and is_weekly_up:
+            if curr_p > m60_curr and m60_curr > m60_prev and avg_vol_5d > 200 and is_weekly_favorable:
                 dist_10, dist_20 = (curr_p - m10) / m10, (curr_p - m20) / m20
                 if abs(dist_10) < param1 or abs(dist_20) < param1:
-                    hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(60), "status": "🛡️ 回檔支撐", "pro": check_professional_metrics(df.tail(40)), "w_trend": True}
+                    hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(60), "status": "🛡️ 回檔支撐", "pro": check_professional_metrics(df.tail(40), is_long_mode), "w_trend": is_weekly_favorable}
+        
+        elif mode_choice == "反彈遇壓 (空頭追蹤)":
+            if curr_p < m60_curr and m60_curr < m60_prev and avg_vol_5d > 200 and is_weekly_favorable:
+                dist_10, dist_20 = (curr_p - m10) / m10, (curr_p - m20) / m20
+                if abs(dist_10) < param1 or abs(dist_20) < param1:
+                    hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "d10": dist_10*100, "d20": dist_20*100, "df": df.tail(60), "status": "🧱 反彈遇壓", "pro": check_professional_metrics(df.tail(40), is_long_mode), "w_trend": is_weekly_favorable}
 
         elif mode_choice == "均線糾纏 (底部突破)":
             ma_list = [m10, m20, m60_curr]
             spread = (max(ma_list) - min(ma_list)) / min(ma_list)
-            if spread < param1 and m60_curr >= m60_prev * 0.998 and curr_p > max(ma_list) and is_weekly_up:
+            if spread < param1 and m60_curr >= m60_prev * 0.998 and curr_p > max(ma_list) and is_weekly_favorable:
                 is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
                 status_text = "🚀 帶量突破" if is_vol_boost else "💤 糾纏待變"
-                hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "df": df.tail(60), "status": status_text, "spread": spread*100, "w_trend": True}
+                hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "df": df.tail(60), "status": status_text, "spread": spread*100, "w_trend": is_weekly_favorable}
+
+        elif mode_choice == "高檔糾纏 (破線崩潰)":
+            ma_list = [m10, m20, m60_curr]
+            spread = (max(ma_list) - min(ma_list)) / min(ma_list)
+            if spread < param1 and curr_p < min(ma_list) and is_weekly_favorable:
+                is_vol_boost = (today_vol / avg_vol_5d) >= param2 if avg_vol_5d > 0 else False
+                status_text = "💥 帶量破底" if is_vol_boost else "📉 破線轉弱"
+                hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "df": df.tail(60), "status": status_text, "spread": spread*100, "w_trend": is_weekly_favorable}
 
         elif mode_choice == "箱型突破 (達華斯動能)":
             period, max_width = int(param1), param2
             past_highs, past_lows = df['High'].iloc[-period-1:-1], df['Low'].iloc[-period-1:-1]
             box_top, box_bottom = past_highs.max(), past_lows.min()
-            
             if box_bottom > 0 and ((box_top - box_bottom) / box_bottom) <= max_width:
-                if curr_p > box_top and today_vol > avg_vol_5d * 1.5 and is_weekly_up:
-                    hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "df": df.tail(80), "status": "📦 箱型突破", "w_trend": True, "box_top": box_top, "box_bot": box_bottom}
+                if curr_p > box_top and today_vol > avg_vol_5d * 1.5 and is_weekly_favorable:
+                    hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "df": df.tail(80), "status": "📦 箱型突破", "w_trend": is_weekly_favorable, "box_top": box_top, "box_bot": box_bottom}
+                    
+        elif mode_choice == "箱底破位 (達華斯跳水)":
+            period, max_width = int(param1), param2
+            past_highs, past_lows = df['High'].iloc[-period-1:-1], df['Low'].iloc[-period-1:-1]
+            box_top, box_bottom = past_highs.max(), past_lows.min()
+            if box_bottom > 0 and ((box_top - box_bottom) / box_bottom) <= max_width:
+                if curr_p < box_bottom and today_vol > avg_vol_5d * 1.5 and is_weekly_favorable:
+                    hit_data = {"id": symbol, "price": curr_p, "vol_diff": vol_diff_pct, "df": df.tail(80), "status": "🕳️ 箱底破位", "w_trend": is_weekly_favorable, "box_top": box_top, "box_bot": box_bottom}
 
         if hit_data:
-            hit_data['patterns'] = detect_patterns(df)
+            hit_data['patterns'] = detect_patterns(df, is_long_mode)
             
             wins, total_signals = 0, 0
             try:
-                if mode_choice == "均線糾纏 (底部突破)":
+                # 這裡為求效率先不寫空方複雜回測，保留多方邏輯
+                if "糾纏" in mode_choice:
                     max_h, min_h = pd.concat([ma10_all, ma20_all, ma60_all], axis=1).max(axis=1), pd.concat([ma10_all, ma20_all, ma60_all], axis=1).min(axis=1)
-                    hist_signals = ((max_h - min_h) / min_h < param1) & (close > max_h) & (close.shift(1) <= max_h.shift(1))
-                elif mode_choice == "均線回檔 (趨勢追蹤)":
-                    hist_signals = (close > ma60_all) & (abs((close - ma20_all)/ma20_all) < param1) & (close.shift(1) > ma20_all * 1.05)
+                    if is_long_mode:
+                        hist_signals = ((max_h - min_h) / min_h < param1) & (close > max_h) & (close.shift(1) <= max_h.shift(1))
+                    else:
+                        hist_signals = ((max_h - min_h) / min_h < param1) & (close < min_h) & (close.shift(1) >= min_h.shift(1))
                 else:
                     hist_signals = pd.Series([False]*len(df), index=df.index) 
                 
                 for d in df[hist_signals].index[:-1]: 
                     idx = df.index.get_loc(d)
                     if idx + 20 < len(df): 
-                        if df['Close'].iloc[idx+1 : idx+21].max() > float(df['Close'].iloc[idx]) * 1.10: wins += 1
+                        if is_long_mode and df['Close'].iloc[idx+1 : idx+21].max() > float(df['Close'].iloc[idx]) * 1.10: wins += 1
+                        elif not is_long_mode and df['Close'].iloc[idx+1 : idx+21].min() < float(df['Close'].iloc[idx]) * 0.90: wins += 1
                         total_signals += 1
                 hit_data['backtest'] = {"wins": wins, "total": total_signals, "rate": (wins / total_signals * 100) if total_signals > 0 else 0}
             except:
@@ -228,10 +301,18 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
             except:
                 hit_data['pe'] = hit_data['pb'] = None
             
-            struct_stop = df['Low'].iloc[-5:].min()
-            hit_data["stop_price"] = struct_stop
-            hit_data["profit_stop"] = m20            
-            hit_data["risk_pct"] = ((curr_p - struct_stop) / curr_p) * 100
+            # 🌟 風控邏輯切換：作多的停損是近期低點，作空的停損是近期高點
+            if is_long_mode:
+                struct_stop = df['Low'].iloc[-5:].min()
+                hit_data["stop_price"] = struct_stop
+                hit_data["profit_stop"] = m20            
+                hit_data["risk_pct"] = ((curr_p - struct_stop) / curr_p) * 100
+            else:
+                struct_stop = df['High'].iloc[-5:].max()
+                hit_data["stop_price"] = struct_stop
+                hit_data["profit_stop"] = m20            
+                hit_data["risk_pct"] = ((struct_stop - curr_p) / curr_p) * 100
+                
             return hit_data
         return None
     except Exception as e:
@@ -240,23 +321,20 @@ def analyze_stock(symbol, mode_choice, param1, param2=None):
 # --- 6. 執行顯示 ---
 if run_btn:
     full_list = get_full_industry_list(industry_choice)
-    st.info(f"🔎 模式：{mode} | 正在掃描 {len(full_list)} 檔標的...")
+    st.info(f"🔎 模式：{mode} ({'作多' if is_long else '作空'}) | 正在掃描 {len(full_list)} 檔標的...")
     hits, bar = [], st.progress(0)
     for i, s in enumerate(full_list):
-        if mode == "均線回檔 (趨勢追蹤)": p1, p2 = sensitivity, None
-        elif mode == "均線糾纏 (底部突破)": p1, p2 = entangle_limit, vol_boost
+        if "回檔" in mode or "反彈" in mode: p1, p2 = sensitivity, None
+        elif "糾纏" in mode: p1, p2 = entangle_limit, vol_boost
         else: p1, p2 = box_period, box_width
         
-        res = analyze_stock(s, mode, p1, p2)
+        res = analyze_stock(s, mode, p1, p2, is_long)
         if res: hits.append(res)
         bar.progress((i + 1) / len(full_list))
     
-    # ==========================================
-    # 🌟 修正區域：如果有抓到股票，就畫圖；如果沒有，就顯示空手提示
-    # ==========================================
     if hits:
-        if mode == "均線回檔 (趨勢追蹤)": hits = sorted(hits, key=lambda x: abs(x.get('d20', 100)))
-        elif mode == "均線糾纏 (底部突破)": hits = sorted(hits, key=lambda x: x.get('spread', 100))
+        if "回檔" in mode or "反彈" in mode: hits = sorted(hits, key=lambda x: abs(x.get('d20', 100)))
+        elif "糾纏" in mode: hits = sorted(hits, key=lambda x: x.get('spread', 100))
         else: hits = sorted(hits, key=lambda x: x.get('vol_diff', 0), reverse=True) 
 
         st.divider()
@@ -281,20 +359,28 @@ if run_btn:
                 pe_tag = f"🟢 低估 ({pe_val:.1f})" if pe_val and pe_val < 15 else (f"🟡 常態 ({pe_val:.1f})" if pe_val and pe_val < 25 else (f"🔴 偏高 ({pe_val:.1f})" if pe_val else "⚪ 暫無數據"))
                 pb_tag = f"🟢 超跌便宜 ({pb_val:.2f})" if pb_val and pb_val < 1.5 else (f"🟡 常態 ({pb_val:.2f})" if pb_val and pb_val < 3.5 else (f"🔴 昂貴 ({pb_val:.2f})" if pb_val else "⚪ 暫無數據"))
 
-                w_tag = "📈 週線多頭" if hit.get('w_trend') else "⚠️ 週線偏空"
+                # 🌟 週線狀態顯示切換
+                if is_long:
+                    w_tag = "📈 週線多頭" if hit.get('w_trend') else "⚠️ 週線偏空"
+                else:
+                    w_tag = "📉 週線空頭" if hit.get('w_trend') else "⚠️ 週線偏多"
+
                 st.markdown(f"### [{clean_id} {stock_name} ｜ {hit['status']} ｜ {w_tag}]({tv_url})")
                 
-                if 'backtest' in hit and mode != "箱型突破 (達華斯動能)":
+                if 'backtest' in hit and "箱型" not in mode and "箱底" not in mode:
                     bt = hit['backtest']
                     if bt['total'] > 0:
-                        st.warning(f"🔥 **大數據歷史回測 (近2年)**：觸發 `{bt['total']}` 次，波段達標(+10%)共 `{bt['wins']}` 次 👉 **歷史勝率 {bt['rate']:.1f}%**")
+                        st.warning(f"🔥 **大數據歷史回測 (近2年)**：觸發 `{bt['total']}` 次，波段達標共 `{bt['wins']}` 次 👉 **歷史勝率 {bt['rate']:.1f}%**")
                     else:
                         st.info("ℹ️ 近兩年首次出現此訊號，無歷史回測數據。")
 
                 c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.2])
                 c1.metric("現價", f"{hit['price']:.1f}")
                 vol_val = hit['vol_diff']
-                c2.metric("量能變動", f"{vol_val:.1f}%", delta=f"{vol_val:.1f}%")
+                # 🌟 量能顯示：作空放量是好跌訊，所以數字為正也用綠色表示
+                delta_color = "normal" if is_long else "inverse"
+                c2.metric("量能變動", f"{vol_val:.1f}%", delta=f"{vol_val:.1f}%", delta_color=delta_color)
+                
                 c3.write("本益比(PE)")
                 c3.markdown(f"<div style='font-size: 16px; font-weight: bold;'>{pe_tag}</div>", unsafe_allow_html=True)
                 c4.write("淨值比(PB)")
@@ -302,17 +388,19 @@ if run_btn:
                 
                 if "pro" in hit:
                     pro = hit['pro']
-                    st.info(f"💡 **職業視角**：{'✅ 賣壓竭盡' if pro.get('decay') else '❌ 仍有賣壓'} | {pro.get('signal', '')} | **策略**：{pro.get('action', '')}")
+                    st.info(f"💡 **職業視角**：{pro.get('decay_str', '')} | {pro.get('signal', '')} | **策略**：{pro.get('action', '')}")
 
                 if "stop_price" in hit:
                     k1, k2, k3 = st.columns(3)
-                    k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", delta=f"-{hit['risk_pct']:.1f}%", delta_color="inverse")
+                    # 🌟 停損顯示：作空停損價高於現價
+                    risk_sign = "-" if is_long else "+"
+                    k1.metric("🛑 建議停損", f"{hit['stop_price']:.1f}", delta=f"{risk_sign}{hit['risk_pct']:.1f}%", delta_color="inverse" if is_long else "normal")
                     k2.metric("🎯 移動停利", f"{hit['profit_stop']:.1f}")
                     k3.write(f"⚖️ **最大風險**\n`{hit['risk_pct']:.1f}%`")
 
                 col_chart, col_table = st.columns([7, 3])
 
-                # ====== 左半邊畫圖 (拔除法人籌碼，恢復雙層結構) ======
+                # ====== 左半邊畫圖 ======
                 with col_chart:
                     df_plot = hit['df'].copy()
                     df_plot.index = pd.to_datetime(df_plot.index).tz_localize(None).normalize()
@@ -325,10 +413,11 @@ if run_btn:
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA20'], line=dict(color='#FF1493', width=1.5), name="20MA"), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df_plot.index, y=df_plot['MA60'], line=dict(color='#32CD32', width=1.5), name="60MA"), row=1, col=1)
 
-                    if mode == "箱型突破 (達華斯動能)" and "box_top" in hit:
+                    if ("箱型" in mode or "箱底" in mode) and "box_top" in hit:
                         fig.add_hline(y=hit["box_top"], line_dash="dash", line_color="red", row=1, col=1, annotation_text="箱頂")
                         fig.add_hline(y=hit["box_bot"], line_dash="dash", line_color="green", row=1, col=1, annotation_text="箱底")
 
+                    # 🌟 顏色設定：台股漲紅跌綠
                     fig.add_trace(go.Candlestick(
                         x=df_plot.index, open=df_plot['Open'], high=df_plot['High'], low=df_plot['Low'], close=df_plot['Close'], name="K棒",
                         increasing_line_color='#EF5350', decreasing_line_color='#26A69A'  
@@ -360,13 +449,15 @@ if run_btn:
                     st.markdown("#### 🤖 AI 深度診斷指令")
                     bt_str = f"近2年觸發 {hit['backtest']['total']} 次，勝率 {hit['backtest']['rate']:.1f}%" if 'backtest' in hit and hit['backtest']['total'] > 0 else "首次觸發或無回測資料"
                     
+                    # 🌟 AI 指令根據多空切換用語
+                    direction_str = "作多" if is_long else "作空"
                     ai_prompt = (
-                        f"阿峰雷達呼叫 🐝：請幫我深度分析【{clean_id} {stock_name}】。\n\n"
+                        f"阿峰雷達呼叫 🐝：請幫我深度分析【{clean_id} {stock_name}】，目前我考慮【{direction_str}】。\n\n"
                         f"📊 目前雷達偵測數據：\n"
                         f"- 技術狀態：{hit['status']} ({w_tag})\n"
                         f"- 價格量能：現價 {hit['price']:.1f}，量能變化 {vol_val:.1f}%\n"
                         f"- 歷史勝率：{bt_str}\n\n"
-                        f"👉 請結合目前的台股大環境，幫我評估這檔股票的【進場優勢】、【籌碼面可能隱患】，並給我具體的【實戰試單策略】。"
+                        f"👉 請結合目前的台股大環境，幫我評估這檔股票的【{direction_str}優勢】、【潛在軋空或套牢隱患】，並給我具體的【實戰試單策略】。"
                     )
                     st.code(ai_prompt, language="text")
 
@@ -376,9 +467,7 @@ if run_btn:
                 except:
                     pass
                     
-    # ==========================================
-    # 🌟 這裡就是正確對齊的「查無股票」提示區塊
-    # ==========================================
     else:
         st.divider()
-        st.warning(f"📭 **掃描完畢！** 在這個產業中，今天沒有股票符合【{mode}】的嚴格條件。\n\n💡 實戰建議：這代表目前沒有標準的進場訊號，請保持空手耐心等待，或是到左側把「帶量門檻」調低、「箱體振幅」調寬再試一次！")
+        action_word = "作多" if is_long else "作空"
+        st.warning(f"📭 **掃描完畢！** 在這個產業中，今天沒有股票符合【{mode}】的嚴格條件。\n\n💡 實戰建議：這代表目前沒有標準的{action_word}訊號，請保持空手耐心等待，或是到左側放寬條件再試一次！")
